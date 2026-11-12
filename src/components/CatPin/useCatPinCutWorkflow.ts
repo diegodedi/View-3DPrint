@@ -27,6 +27,7 @@ export function useCatPinCutWorkflow({
 }: UseCatPinCutWorkflowParams) {
   const [toolMode, setToolMode] = useState<CatpinToolMode>('seam');
   const [detailDepthMm, setDetailDepthMm] = useState<number>(3.0);
+  const [detailTaperPct, setDetailTaperPct] = useState<number>(0);
   const [cutGapMm, setCutGapMm] = useState<number>(0.2);
   const [isLoopClosed, setIsLoopClosed] = useState<boolean>(false);
   const [connectorConfig, setConnectorConfig] = useState<CatpinConnectorConfig>({
@@ -150,11 +151,11 @@ export function useCatPinCutWorkflow({
   }, []);
 
   return {
-    toolMode, detailDepthMm, cutGapMm, isLoopClosed, connectorConfig,
+    toolMode, detailDepthMm, detailTaperPct, cutGapMm, isLoopClosed, connectorConfig,
     cutPoints, isPolylineFlipped, polylineFlipSide: isPolylineFlipped, straightFlipTrigger, pinFlipTrigger,
     axisAlignRequest, result, explodeDistance,
     isBuilding, errorMsg,
-    setDetailDepthMm, setCutGapMm, setIsLoopClosed, setCutPoints,
+    setDetailDepthMm, setDetailTaperPct, setCutGapMm, setIsLoopClosed, setCutPoints,
     setResult, setExplodeDistance, setErrorMsg,
     handleChangeToolMode, handleClearPoints, handleFlipCutSide,
     handleAlignAxis, handleInvertPin, handleChangeConnector,

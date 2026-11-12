@@ -21,6 +21,7 @@ interface UseCatPinCutterLifecycleParams {
   toolMode: CatpinToolMode;
   sourceGeometry?: THREE.BufferGeometry;
   detailDepthMm: number;
+  detailTaperPct?: number;
   cutPoints: CutPoint3D2D[];
   polylineFlipSide: boolean;
   result: CatpinCutResult | null;
@@ -43,6 +44,7 @@ export function useCatPinCutterLifecycle({
   toolMode,
   sourceGeometry,
   detailDepthMm,
+  detailTaperPct = 0,
   cutPoints,
   polylineFlipSide,
   result,
@@ -87,7 +89,8 @@ export function useCatPinCutterLifecycle({
         modelBoxRef.current,
         polylineFlipSide,
         surfaceNormals,
-        cameraRef.current
+        cameraRef.current,
+        detailTaperPct
       )?.cutterMesh ?? null;
     }
 
@@ -100,6 +103,6 @@ export function useCatPinCutterLifecycle({
     setSyncTick((t) => t + 1);
     renderScene();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolMode, sourceGeometry, detailDepthMm, worldPtsSig, polylineFlipSide, result, sceneRef, cameraRef, renderScene]);
+  }, [toolMode, sourceGeometry, detailDepthMm, detailTaperPct, worldPtsSig, polylineFlipSide, result, sceneRef, cameraRef, renderScene]);
 }
 

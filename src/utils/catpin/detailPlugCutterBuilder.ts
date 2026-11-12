@@ -26,9 +26,51 @@ function computeNewellNormal(points: THREE.Vector3[]): THREE.Vector3 {
   return normal.normalize();
 }
 
+function buildTaperedPlugGeometry(
+  pts2D: THREE.Vector2[],
+  depth: number,
+  taperScale: number,
+  topZ: number = 0.2
+): THREE.BufferGeometry {
+  const n = pts2D.length;
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i < n; i++) {
+    positions.push(pts2D[i].x, pts2D[i].y, topZ);
+  }
+  for (let i = 0; i < n; i++) {
+    positions.push(pts2D[i].x * taperScale, pts2D[i].y * taperScale, -depth);
+  }
+
+  for (let i = 0; i < n; i++) {
+    const next = (i + 1) % n;
+    const t0 = i;
+    const t1 = next;
+    const b0 = n + i;
+    const b1 = n + next;
+    indices.push(t0, b0, b1);
+    indices.push(t0, b1, t1);
+  }
+
+  const shapeTris = THREE.ShapeUtils.triangulateShape(pts2D, []);
+  for (const tri of shapeTris) {
+    indices.push(tri[0], tri[1], tri[2]);
+  }
+  for (const tri of shapeTris) {
+    indices.push(n + tri[0], n + tri[2], n + tri[1]);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setIndex(indices);
+  geom.computeVertexNormals();
+  return geom;
+}
+
 /**
  * FERRAMENTA 2: Extrusão de Detalhes (Detail Plug Cut)
- * Para extrair olhos, bocas, orelhas com profundidade rasa de encaixe.
+ * Para extrair olhos, bocas, orelhas com profundidade rasa de encaixe e afunilamento (taper).
  * A extrusão é orientada estritamente pelo ÂNGULO DA NORMAL CRIADA PELA SELEÇÃO (Newell / Stokes).
  */
 export function buildDetailPlugCutterMesh(
@@ -37,7 +79,8 @@ export function buildDetailPlugCutterMesh(
   modelBox?: THREE.Box3 | THREE.Camera | null,
   flipSide: boolean = false,
   surfaceNormals?: THREE.Vector3[],
-  camera?: THREE.Camera | null
+  camera?: THREE.Camera | null,
+  taperPct: number = 0
 ): { cutterMesh: THREE.Mesh } | null {
   if (!points3D || points3D.length < 3) return null;
 
@@ -107,15 +150,32 @@ export function buildDetailPlugCutterMesh(
 
   const polygonUV = ensureCounterClockwise2D(pts2D);
   const clampedDepth = THREE.MathUtils.clamp(depthMm, 1.0, 60.0);
+  const clampedTaper = THREE.MathUtils.clamp(taperPct, 0, 80);
+  const taperScale = THREE.MathUtils.clamp(1.0 - clampedTaper / 100, 0.2, 1.0);
   const wMin = -clampedDepth;
-  const wMax = 0.5;
 
-  const geom = new THREE.ExtrudeGeometry(new THREE.Shape(polygonUV), {
-    depth: wMax - wMin,
-    bevelEnabled: false,
-  });
-  geom.translate(0, 0, wMin);
-  geom.computeVertexNormals();
+  let maxForward = 50.0;
+  if (targetBox && !targetBox.isEmpty()) {
+    const corners = [
+      new THREE.Vector3(targetBox.min.x, targetBox.min.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.min.x, targetBox.min.y, targetBox.max.z),
+      new THREE.Vector3(targetBox.min.x, targetBox.max.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.min.x, targetBox.max.y, targetBox.max.z),
+      new THREE.Vector3(targetBox.max.x, targetBox.min.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.max.x, targetBox.min.y, targetBox.max.z),
+      new THREE.Vector3(targetBox.max.x, targetBox.max.y, targetBox.min.z),
+      new THREE.Vector3(targetBox.max.x, targetBox.max.y, targetBox.max.z),
+    ];
+    let maxProj = 0;
+    for (const c of corners) {
+      const proj = c.sub(centroid).dot(zAxis);
+      if (proj > maxProj) maxProj = proj;
+    }
+    maxForward = Math.max(maxProj + 10.0, 20.0);
+  }
+  const wMax = maxForward;
+
+  const geom = buildTaperedPlugGeometry(polygonUV, clampedDepth, taperScale, 0.2);
 
   const cutterMesh = new THREE.Mesh(geom, createCutterVolumeMaterial());
   cutterMesh.renderOrder = 15;
@@ -134,6 +194,7 @@ export function buildDetailPlugCutterMesh(
     polygonUV: polygonUV.map((v) => [v.x, v.y] as [number, number]),
     wMin,
     wMax,
+    scale: [taperScale, taperScale],
   };
   return { cutterMesh };
 }

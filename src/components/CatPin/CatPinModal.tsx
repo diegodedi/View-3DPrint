@@ -58,11 +58,11 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
   }));
 
   const {
-    toolMode, detailDepthMm, cutGapMm, isLoopClosed, connectorConfig,
+    toolMode, detailDepthMm, detailTaperPct, cutGapMm, isLoopClosed, connectorConfig,
     cutPoints, polylineFlipSide, straightFlipTrigger, pinFlipTrigger,
     axisAlignRequest, result, explodeDistance,
     isBuilding, errorMsg,
-    setDetailDepthMm, setCutGapMm, setIsLoopClosed, setCutPoints,
+    setDetailDepthMm, setDetailTaperPct, setCutGapMm, setIsLoopClosed, setCutPoints,
     setResult, setExplodeDistance, setErrorMsg,
     handleChangeToolMode, handleClearPoints, handleFlipCutSide,
     handleAlignAxis, handleInvertPin, handleChangeConnector,
@@ -147,6 +147,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             sourceGeometry={activeGeometry}
             toolMode={toolMode}
             detailDepthMm={detailDepthMm}
+            detailTaperPct={detailTaperPct}
             isLoopClosed={isLoopClosed}
             connectorConfig={connectorConfig}
             result={result}
@@ -203,6 +204,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
           <CatPinControls
             toolMode={toolMode}
             detailDepthMm={detailDepthMm}
+            detailTaperPct={detailTaperPct}
             cutGapMm={cutGapMm}
             isLoopClosed={isLoopClosed}
             connectorConfig={connectorConfig}
@@ -215,6 +217,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             canRedo={canRedo}
             onChangeToolMode={handleChangeToolMode}
             onChangeDetailDepth={setDetailDepthMm}
+            onChangeDetailTaper={setDetailTaperPct}
             onChangeCutGap={setCutGapMm}
             onChangeConnector={handleChangeConnector}
             onCloseLoop={() => { setIsLoopClosed(true); setErrorMsg(null); }}

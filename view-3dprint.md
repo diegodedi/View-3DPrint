@@ -84,4 +84,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-12 (Blindagem e estabilização 1:1 dos conectores do CatPin: eliminação da projeção forçada em plano, rotação e eixos anti-rotação preservados, imunidade a reset nos sliders e 100% dos testes aprovados)
+## Last updated: 2026-11-12 (v1.0.1: Extrusão de Detalhe blindada com relevo e taper, conectores 3D com rotação/inversão e auto-updater no startup)

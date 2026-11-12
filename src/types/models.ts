@@ -122,7 +122,7 @@ export type CatpinCutSpec =
       indicesA?: Uint32Array;
     };
   }
-  | { kind: 'extrude'; polygonUV: Array<[number, number]>; basis: number[]; wMin: number; wMax: number; scale?: [number, number] };
+  | { kind: 'extrude'; polygonUV: Array<[number, number]>; basis: number[]; wMin: number; wMax: number; scale?: [number, number]; point?: CatpinV3 };
 
 export type CatpinPinSide = 'auto' | 'partA' | 'partB';
 

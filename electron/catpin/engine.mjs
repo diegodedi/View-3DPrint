@@ -45,7 +45,7 @@ export function executeCut(wasm, input) {
   const bb = model.boundingBox();
   const diag = len(sub(bb.max, bb.min));
   const center = mul(add(bb.min, bb.max), 0.5);
-  const cutRef = (input.cut.kind === 'plane' || input.cut.kind === 'seam') ? input.cut.point : center;
+  const cutRef = input.cut.point || (input.cut.basis && input.cut.basis.length === 16 ? [input.cut.basis[12], input.cut.basis[13], input.cut.basis[14]] : center);
   const S = diag * 2 + len(sub(cutRef, center)) * 2 + 50;
 
   let cutterBForProbe = null;

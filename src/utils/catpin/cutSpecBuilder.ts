@@ -109,6 +109,7 @@ export function buildCutSpecModel(
       bladeMesh,
     };
   }
+  const point = new THREE.Vector3().setFromMatrixPosition(cutterMesh.matrixWorld).applyMatrix4(inv);
   return {
     kind: 'extrude',
     polygonUV: spec2D.polygonUV,
@@ -116,6 +117,7 @@ export function buildCutSpecModel(
     wMin: spec2D.wMin,
     wMax: spec2D.wMax,
     scale: spec2D.scale,
+    point: toV3(point),
   };
 }
 

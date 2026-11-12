@@ -11,6 +11,7 @@ export type CatpinToolMode = 'seam' | 'detail' | 'straight';
 interface CatPinControlsProps {
   toolMode: CatpinToolMode;
   detailDepthMm: number;
+  detailTaperPct: number;
   cutGapMm: number;
   isLoopClosed: boolean;
   connectorConfig: CatpinConnectorConfig;
@@ -23,6 +24,7 @@ interface CatPinControlsProps {
   canRedo?: boolean;
   onChangeToolMode: (mode: CatpinToolMode) => void;
   onChangeDetailDepth: (depthMm: number) => void;
+  onChangeDetailTaper: (taperPct: number) => void;
   onChangeCutGap: (gapMm: number) => void;
   onChangeConnector: (patch: Partial<CatpinConnectorConfig>) => void;
   onCloseLoop: () => void;
@@ -39,9 +41,9 @@ interface CatPinControlsProps {
 }
 
 export const CatPinControls: React.FC<CatPinControlsProps> = ({
-  toolMode, detailDepthMm, cutGapMm, isLoopClosed, connectorConfig, isBuilding, errorMsg,
+  toolMode, detailDepthMm, detailTaperPct, cutGapMm, isLoopClosed, connectorConfig, isBuilding, errorMsg,
   pointsCount, parts, selectedPartId, canUndo, canRedo,
-  onChangeToolMode, onChangeDetailDepth, onChangeCutGap, onChangeConnector,
+  onChangeToolMode, onChangeDetailDepth, onChangeDetailTaper, onChangeCutGap, onChangeConnector,
   onCloseLoop, onClearPoints, onFlipCutSide, onInvertPin, onAlignAxis, onExecuteCut,
   onSelectPart, onTogglePartVisibility, onUndo, onRedo, onStartCutSelectedPart,
 }) => {
@@ -106,17 +108,31 @@ export const CatPinControls: React.FC<CatPinControlsProps> = ({
         )}
 
         {toolMode === 'detail' && (
-          <div className="smart-field">
-            <label className="catpin-slider-row" htmlFor="catpin-depth-slider">
-              <span>Profundidade Detalhe:</span>
-              <strong className="text-primary">{detailDepthMm.toFixed(1)} mm</strong>
-            </label>
-            <input
-              id="catpin-depth-slider" type="range" min={1.0} max={60.0} step={1.0}
-              value={detailDepthMm}
-              onChange={(e) => onChangeDetailDepth(Number(e.target.value))}
-            />
-          </div>
+          <>
+            <div className="smart-field">
+              <label className="catpin-slider-row" htmlFor="catpin-depth-slider">
+                <span>Profundidade Detalhe:</span>
+                <strong className="text-primary">{detailDepthMm.toFixed(1)} mm</strong>
+              </label>
+              <input
+                id="catpin-depth-slider" type="range" min={1.0} max={60.0} step={1.0}
+                value={detailDepthMm}
+                onChange={(e) => onChangeDetailDepth(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="smart-field">
+              <label className="catpin-slider-row" htmlFor="catpin-taper-slider">
+                <span>Afunilamento (Taper):</span>
+                <strong className="text-primary">{detailTaperPct}%</strong>
+              </label>
+              <input
+                id="catpin-taper-slider" type="range" min={0} max={80} step={5}
+                value={detailTaperPct}
+                onChange={(e) => onChangeDetailTaper(Number(e.target.value))}
+              />
+            </div>
+          </>
         )}
 
         {(toolMode === 'seam' || toolMode === 'straight' || toolMode === 'detail') && (

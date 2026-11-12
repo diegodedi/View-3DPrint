@@ -189,15 +189,34 @@ export function cutterSolid(wasm, cut, options) {
     }
     let cs = CrossSection.ofPolygons([ensureCCW(cut.polygonUV)], 'NonZero');
     if (delta !== 0) {
-      cs = cs.offset(delta, 'Miter', 2);
+      const orig = cs;
+      cs = orig.offset(delta, 'Miter', 2);
+      orig.delete();
     }
-    if (cs.isEmpty() || cs.area() < 1e-6) return null;
-    const z0 = cut.wMin - delta;
-    const z1 = cut.wMax + delta;
-    const scale = cut.scale ?? [1, 1];
-    return Manifold.extrude(cs, z1 - z0, 0, 0, scale, false)
-      .translate([0, 0, z0])
-      .transform(cut.basis);
+    if (cs.isEmpty() || cs.area() < 1e-6) {
+      cs.delete();
+      return null;
+    }
+
+    const depth = Math.max(Math.abs(cut.wMin ?? -5.0), 0.1);
+    const outwardH = Math.max(cut.wMax ?? 50.0, 10.0);
+    const taperScale = cut.scale ?? [1, 1];
+
+    // Espiga interna de encaixe (Z de 0 a -depth, afunilando para taperScale)
+    const inward = Manifold.extrude(cs, depth, 0, 0, taperScale, false).scale([1, 1, -1]);
+
+    // Envelope externo (Z de 0 a +outwardH, reto 1.0x para preservar 100% do relevo do detalhe)
+    const outward = Manifold.extrude(cs, outwardH, 0, 0, [1, 1], false);
+    cs.delete();
+
+    const fullCutter = Manifold.union([inward, outward]);
+    inward.delete();
+    outward.delete();
+
+    const basis = cut.basis ?? frameFromZ(cut.normal, cut.point);
+    const result = fullCutter.transform(basis);
+    fullCutter.delete();
+    return result;
   }
 
   throw new CatpinError('CUTTER_INVALID', `Tipo de corte desconhecido: ${cut.kind}`);

@@ -728,6 +728,41 @@ console.log('\n[BÔNUS] Comunicação via Worker Thread (Simulação Electron IP
   ok(smoothBlushCut.success && smoothBlushCut.islandsB === 1, 'Extrusão de detalhe suavizada (64 vértices): plug curvilíneo fechado');
   ok(smoothBlushCut.partBTriangles >= 120, `Plug curvilíneo suave gerou malha densa e redonda (${smoothBlushCut.partBTriangles} triângulos)`);
 
+  // Teste de Detalhe Saliente (Olho Tridimensional com Relevo Externo) + Espiga Cônica (Taper)
+  const dinoHeadBase = Manifold.sphere(25, 24).translate([0, 0, -15]);
+  const dinoEyeBulge = Manifold.sphere(8, 24).translate([0, 0, 8]); // Olho saliente avançando até Z = +16
+  const dinoModel = Manifold.union([dinoHeadBase, dinoEyeBulge]);
+  const dinoSoup = toSoup(dinoModel);
+  dinoHeadBase.delete();
+  dinoEyeBulge.delete();
+  dinoModel.delete();
+
+  const eyeOutline = Array.from({ length: 32 }, (_, i) => {
+    const a = (i * 2 * Math.PI) / 32;
+    return [7 * Math.cos(a), 7 * Math.sin(a)];
+  });
+
+  const eyeCutWithTaper = await executeCatpinCutForUi({
+    positions: dinoSoup, indices: null,
+    cut: {
+      kind: 'extrude',
+      point: [0, 0, 0],
+      normal: [0, 0, 1],
+      polygonUV: eyeOutline,
+      wMin: -5,
+      wMax: 40,
+      scale: [0.6, 0.6], // Afunilamento de 40% na espiga interna
+      basis: [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1],
+    },
+    cutGapMm: 0,
+    connector: null,
+  });
+
+  ok(eyeCutWithTaper.success, 'Extrusão de detalhe em olho saliente com taper executada com sucesso');
+  ok(eyeCutWithTaper.islandsB === 1, 'Parte B (olho saliente + espiga cônica) é 1 ilha 100% fechada');
+  ok(eyeCutWithTaper.islandsA === 1, 'Parte A (cabeça com cavidade) é 1 ilha única sem pedaços desconectados');
+  ok(eyeCutWithTaper.partBBuffer.byteLength > 100, 'Parte B gerou STL binário de olho com espiga válido');
+
   // [13] Corte de Membro: Centróide Exato e Blindagem de Encaixe nos 2 Tipos de Conector (Cilindro e Trapézio)
   console.log('\n[13] Corte de Membro: Centróide Exato da Seção nos 2 Tipos de Conector (Cilindro e Trapézio)');
   for (const cType of ['cylinder', 'trapezoid']) {

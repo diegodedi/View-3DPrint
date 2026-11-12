@@ -28,6 +28,7 @@ interface CatPinCanvasProps {
   sourceGeometry: THREE.BufferGeometry;
   toolMode: CatpinToolMode;
   detailDepthMm: number;
+  detailTaperPct?: number;
   isLoopClosed: boolean;
   connectorConfig: CatpinConnectorConfig;
   result: CatpinCutResult | null;
@@ -49,7 +50,7 @@ interface CatPinCanvasProps {
 }
 
 export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
-  sourceGeometry, toolMode, detailDepthMm, isLoopClosed, connectorConfig,
+  sourceGeometry, toolMode, detailDepthMm, detailTaperPct = 0, isLoopClosed, connectorConfig,
   result, explodeDistance, cutPoints, polylineFlipSide, straightFlipTrigger, pinFlipTrigger, axisAlignRequest,
   parts = [], selectedPartId = '', isDraftMode = true,
   isPlateMode = false, plateArrangement = null,
@@ -123,7 +124,7 @@ export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
 
   useCatPinCutterLifecycle({
     sceneRef, cameraRef, mainMeshRef, cutterMeshRef, modelBoxRef, straightPoseRef,
-    autoPoseRef, toolMode, sourceGeometry, detailDepthMm, cutPoints, polylineFlipSide, result,
+    autoPoseRef, toolMode, sourceGeometry, detailDepthMm, detailTaperPct, cutPoints, polylineFlipSide, result,
     syncConnectorsWithCutter, setSyncTick, renderScene,
   });
 
