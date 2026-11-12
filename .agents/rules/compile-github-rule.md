@@ -14,3 +14,4 @@ Sempre que o usuário pedir para "compilar uma nova versão e subir para o githu
 ## Autenticação com GitHub (GH_TOKEN)
 - O script utiliza o token definido na variável `GH_TOKEN` no arquivo `.env` local.
 - O token possui o escopo `repo` configurado.
+
