@@ -1,0 +1,87 @@
+solid caixa_gridfinity
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 0 42 0
+      vertex 42 42 0
+    endloop
+  endfacet
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 42 42 0
+      vertex 42 0 0
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex 0 0 28
+      vertex 42 42 28
+      vertex 0 42 28
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex 0 0 28
+      vertex 42 0 28
+      vertex 42 42 28
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 42 0 0
+      vertex 42 0 28
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 42 0 28
+      vertex 0 0 28
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 42 0 0
+      vertex 42 42 0
+      vertex 42 42 28
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 42 0 0
+      vertex 42 42 28
+      vertex 42 0 28
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0 42 0
+      vertex 0 42 28
+      vertex 42 42 28
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0 42 0
+      vertex 42 42 28
+      vertex 42 42 0
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 0 28
+      vertex 0 42 28
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 42 28
+      vertex 0 42 0
+    endloop
+  endfacet
+endsolid caixa_gridfinity
+

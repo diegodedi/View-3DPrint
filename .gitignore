@@ -1,0 +1,9 @@
+node_modules/
+.env
+dist/
+build/
+release/
+.DS_Store
+*.log
+audit_out.json
+

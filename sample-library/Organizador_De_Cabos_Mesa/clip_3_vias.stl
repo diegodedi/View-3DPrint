@@ -1,0 +1,59 @@
+solid clip_cabos
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 15 30 0
+      vertex 30 0 0
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex 0 0 18
+      vertex 30 0 18
+      vertex 15 30 18
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 30 0 0
+      vertex 30 0 18
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 30 0 18
+      vertex 0 0 18
+    endloop
+  endfacet
+  facet normal 0.89 0.44 0
+    outer loop
+      vertex 30 0 0
+      vertex 15 30 0
+      vertex 15 30 18
+    endloop
+  endfacet
+  facet normal 0.89 0.44 0
+    outer loop
+      vertex 30 0 0
+      vertex 15 30 18
+      vertex 30 0 18
+    endloop
+  endfacet
+  facet normal -0.89 0.44 0
+    outer loop
+      vertex 15 30 0
+      vertex 0 0 0
+      vertex 0 0 18
+    endloop
+  endfacet
+  facet normal -0.89 0.44 0
+    outer loop
+      vertex 15 30 0
+      vertex 0 0 18
+      vertex 15 30 18
+    endloop
+  endfacet
+endsolid clip_cabos
+

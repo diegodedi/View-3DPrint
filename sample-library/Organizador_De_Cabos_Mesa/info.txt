@@ -1,0 +1,4 @@
+Clipe organizador para cabos USB e cabos da extrusora da impressora 3D.
+Fixação rápida na lateral da mesa ou perfil V-Slot 2020.
+Imprimir em PETG para maior flexibilidade das garras.
+
