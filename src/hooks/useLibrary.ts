@@ -31,6 +31,7 @@ export function useLibrary() {
     settings,
     crealityCatalog,
     setSettings,
+    hydrateInitialCatalog,
     updateSettings,
     launchInSlicer,
     launchConfiguredInSlicer,
@@ -40,15 +41,18 @@ export function useLibrary() {
   const [selectedModelIndex, setSelectedModelIndex] = useState<number>(0);
 
   const applyLoadedData = useCallback(
-    (loadedSettings: AppSettings, loadedItems: PrintObjectItem[]) => {
+    (loadedSettings: AppSettings, loadedItems: PrintObjectItem[], loadedCatalog?: typeof crealityCatalog) => {
       clearThumbnailQueue();
+      if (loadedCatalog) {
+        hydrateInitialCatalog(loadedSettings, loadedCatalog);
+      }
       setSettings(loadedSettings);
       setItems(loadedItems);
       setActiveCategory('Todas');
       setSelectedId(null);
       setSelectedModelIndex(0);
     },
-    [setSettings, setItems, setActiveCategory]
+    [setSettings, hydrateInitialCatalog, setItems, setActiveCategory]
   );
 
   useEffect(() => {
@@ -63,7 +67,7 @@ export function useLibrary() {
         setIsLoading(true);
         const res = await window.electronAPI.getInitialState();
         if (isMounted) {
-          applyLoadedData(res.settings, res.items);
+          applyLoadedData(res.settings, res.items, res.crealityCatalog);
           setErrorMessage(null);
         }
       } catch (err) {

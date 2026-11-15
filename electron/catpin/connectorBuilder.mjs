@@ -16,7 +16,8 @@ import { ensureCCW } from './cutSolids.mjs';
  * jamais transgrida ou crie degraus na face de corte quando o conector for rotacionado/inclinado em 3D,
  * e a cavidade do furo é delimitada ao semi-espaço da peça de encaixe (sockBase).
  */
-export function buildConnectorSolids(wasm, c, _g, cutNormal = null) {
+export function buildConnectorSolids(wasm, c, options = {}) {
+  const { cutNormal = null } = options;
   const { Manifold } = wasm;
   const r = c.diameterMm / 2;
   const h = c.heightMm;

@@ -45,6 +45,7 @@ export function useCatalogItems() {
                 ...item,
                 notes: updatedMeta.notes,
                 thumbnailPath: updatedMeta.customThumbnail || item.thumbnailPath,
+                updatedAt: updatedMeta.customThumbnail ? Date.now() : item.updatedAt,
               }
             : item
         )

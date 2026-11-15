@@ -22,6 +22,9 @@ function buildCrc32Table() {
 }
 
 function computeCrc32(buffer) {
+  if (typeof zlib.crc32 === 'function') {
+    return zlib.crc32(buffer) >>> 0;
+  }
   let crc = 0xffffffff;
   for (let i = 0; i < buffer.length; i++) {
     crc = CRC_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
@@ -109,5 +112,58 @@ function createZipBuffer(entries) {
   return Buffer.concat([...localParts, centralBuffer, endRecord]);
 }
 
-module.exports = { createZipBuffer };
+function deflateRawAsync(buf) {
+  return new Promise((resolve, reject) => {
+    zlib.deflateRaw(buf, { level: 6 }, (err, out) => (err ? reject(err) : resolve(out)));
+  });
+}
+
+/**
+ * Compresses in-memory files into a valid ZIP/3MF Buffer asynchronously.
+ * @param {Array<{ path: string, content: string | Buffer }>} entries
+ * @returns {Promise<Buffer>}
+ */
+async function createZipBufferAsync(entries) {
+  const compressedEntries = await Promise.all(
+    entries.map(async (entry) => {
+      const nameBuf = Buffer.from(entry.path.replace(/\\/g, '/'), 'utf-8');
+      const rawBuf = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, 'utf-8');
+      const [compressedBuf, crc] = await Promise.all([
+        deflateRawAsync(rawBuf),
+        Promise.resolve(computeCrc32(rawBuf)),
+      ]);
+      return { nameBuf, rawLen: rawBuf.length, compressedBuf, crc };
+    })
+  );
+
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const item of compressedEntries) {
+    const localHeader = buildLocalHeader({
+      nameBuf: item.nameBuf,
+      crc: item.crc,
+      compressedLen: item.compressedBuf.length,
+      rawLen: item.rawLen,
+    });
+    centralParts.push(
+      buildCentralHeader({
+        nameBuf: item.nameBuf,
+        crc: item.crc,
+        compressedLen: item.compressedBuf.length,
+        rawLen: item.rawLen,
+        offset,
+      })
+    );
+    localParts.push(localHeader, item.compressedBuf);
+    offset += localHeader.length + item.compressedBuf.length;
+  }
+
+  const centralBuffer = Buffer.concat(centralParts);
+  const endRecord = buildEndRecord(compressedEntries.length, centralBuffer.length, offset);
+  return Buffer.concat([...localParts, centralBuffer, endRecord]);
+}
+
+module.exports = { createZipBuffer, createZipBufferAsync };
 

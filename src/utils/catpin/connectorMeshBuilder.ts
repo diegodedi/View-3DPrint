@@ -10,6 +10,7 @@ export interface CatpinConnectorConfig {
   depthMm: number;
   clearanceMm: number;
   xrayMode: boolean;
+  maskOpacityPct?: number;
   pinSide?: CatpinPinSide;
 }
 

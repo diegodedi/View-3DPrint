@@ -24,26 +24,30 @@ electron/
     worker.mjs             → Worker thread isolada para operações CSG pesadas
     index.cjs              → Pool e ponte IPC Node.js para a worker thread
   launcher.cjs             → Safe cross-platform process spawner for Electron
+  localAssetProtocol.cjs   → Custom local-asset:// protocol handler for zero-Base64 cached thumbnails
   main.cjs                 → Electron main process, window lifecycle, IPC handlers (CatPin cut & suggest)
-  preload.cjs              → Secure contextBridge API for renderer (executeCatpinCut, suggestCatpinPin, saveCatpinFiles)
+  preload.cjs              → Secure contextBridge API with small LRU model buffer cache
+  scannerCache.cjs         → Persisted directory mtime index cache in userData
+  scannerAsync.cjs         → Concurrent async library folder scanner with mtime cache & 2KB head read
   scanner.cjs              → Recursive 3D folder scanner, description & metadata reader
-  slicerService.cjs        → Auto-detection (Creality Print priority), settings, 1-click spawn
+  slicerService.cjs        → Auto-detection (Creality Print priority), in-memory preset cache, 1-click spawn
   crealityPresets.cjs      → Reads Creality Print machine/filament/process profiles & merges JSONs
   creality3mfBuilder.cjs   → Builds complete Creality Print `.3mf` packages with smart parameters
   multiPart3mfService.cjs  → Generates standard Multi-Part `.3mf` project packages with arranged plate transforms
-  zipWriter.cjs            → Native Node.js zlib/CRC32 `.zip`/`.3mf` archive generator
+  zipWriter.cjs            → Native Node.js zlib/CRC32 `.zip`/`.3mf` archive generator (sync + async)
 INICIAR_APP.bat            → 1-click desktop launcher for Windows users
 src/
   components/
-    CatPin/                → CatPinModal, CatPinCanvas, CatPinControls, CatPinConnectorFields, CatPinPartsList, CatPinResultPanel, CatPinOverlay2D, CatPinViewportToolbar, useCatPinMultiParts, useCatPinPlateArrangement, useCatPinCutWorkflow, useCatPinShortcuts, useCatPinCutterLifecycle, useCatPinPointReprojection, useCatPinScene, useCatPinPoints3D, useCatPinGizmoSync, useCatPinResultMesh, useCatPinConnectors, useCatPinModelMesh, useCatPinModelLoader
-    ...                    → Header, ObjectGrid, ObjectCard, Viewer3D, useViewer3DScene, DetailsPanel, SlicerModal, SmartSlicePanel, SmartSliceFields, ModelNotesField
+    CatPin/                → CatPinModal, CatPinCanvas, CatPinControls, CatPinConnectorFields, CatPinPartsList, CatPinResultPanel, CatPinOverlay2D, CatPinViewportToolbar, useCatPinMultiParts, useCatPinPlateArrangement, useCatPinCutWorkflow, useCatPinShortcuts, useCatPinCutterLifecycle, useCatPinMirrorLifecycle, useCatPinPointReprojection, useCatPinScene, useCatPinPoints3D, useCatPinGizmoSync, useCatPinResultMesh, useCatPinConnectors, useCatPinModelMesh, useCatPinModelLoader
+    ...                    → Header, ViewportShadingControl, ViewportShadingSpherePreview, ObjectGrid, ObjectCard, Viewer3D, useViewer3DScene, DetailsPanel, SlicerModal, SmartSlicePanel, SmartSliceFields, ModelNotesField
   hooks/                   → Custom React hooks (`useLibrary.ts`, `useCatalogItems.ts`, `useSlicerSettings.ts`)
   styles/                  → `design-system.css`, `app.css`, `inspector.css`, `catpin.css`, `smart-slicer.css`
   types/                   → TypeScript interfaces (`models.ts`, `catpinMultiParts.ts`, `plateTypes.ts`)
   utils/
-    plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor
-    catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
-    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `modelFolderResolver.ts`)
+    plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor, printerBedResolver
+    catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, mirrorCutUtils, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
+    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbnailRenderer.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
+  workers/                 → `meshWorker.ts` (off-thread STL/OBJ parsing, mesh analysis & deduplication)
 sample-library/            → Demo 3D objects folder for immediate testing
 
 ## Key Files
@@ -52,6 +56,7 @@ src/styles/catpin.css                       → CatPin workstation dark UI style
 src/utils/modelFolderResolver.ts            → Identificação e resolução do local/pasta de trabalho do objeto 3D para salvar peças
 src/utils/plate/autoOrientAntiSupport.ts    → Cálculo de rotação ideal para assentamento da face de corte plana em Z=0 e anti-suporte
 src/utils/plate/plateArranger.ts            → Algoritmo de empacotamento 2D (Shelf Nesting) de peças com margem de segurança na mesa
+src/utils/plate/printerBedResolver.ts       → Resolução automática das dimensões úteis da mesa (X, Y, Z) da impressora configurada
 electron/multiPart3mfService.cjs            → Gerador nativo de pacotes .3mf multi-itens orientados para fatiamento em 1 clique
 src/components/useViewer3DScene.ts           → Hook modular que isola o ciclo de vida Three.js (Scene, Camera, Renderer) da interface React do Viewer3D
 src/components/CatPin/CatPinModal.tsx       → CatPin Draft-to-Commit orchestrator (Carregamento de malha 100% autônomo e isolado do disco)
@@ -60,13 +65,18 @@ src/components/CatPin/useCatPinPlateArrangement.ts → Hook modular de orientaç
 src/components/CatPin/CatPinPartsList.tsx   → Lista interativa de peças resultantes para novos cortes sucessivos
 src/components/CatPin/CatPinCanvas.tsx      → Three.js Draft Viewport (Destra Z=-viewDir, Gizmo W/E, locked Pin pose)
 src/components/CatPin/useCatPinResultMesh.ts→ Result Mode multi-part renderer aligned to rootTransform + Explode View + Plate Nesting Mode
-src/utils/studioResinMaterial.ts            → Shader nativo Single-Pass (Cavity, Ridge, Specular acetinado e Roughness) estilo Blender Workbench
+src/components/ViewportShadingControl.tsx   → Mini configurador global de Viewport Shading (Cor, Cavity Distance, Cavity Intensity, Roughness, Specular) posicionado na viewport de visualização do objeto solo (Viewer3D)
+src/components/ViewportShadingSpherePreview.tsx → Esfera 3D esculpida de pré-visualização em tempo real dos modificadores de Viewport Shading
+src/utils/normalSmoother.ts                 → Suavizador de normais com Crease Angle in-place (sem alterar vértices/índices) para Cavity perfeito em STL
+src/utils/studioResinMaterial.ts            → Shader global unificado (MatCap Cinza Padrão + Cavity + Roughness Difuso + Baixa Specular) para todas as abas e peças
 src/utils/catpin/bestFitPlane.ts            → Ajuste de plano por vetor Normal de Newell (Stokes) com base destra
 src/utils/catpin/deformedSeamMesh.ts        → Malha 3D deformada (Catmull-Rom 3D + superfície harmônica w(u,v)) fiel à Polyline
 src/utils/catpin/cutSpecBuilder.ts          → Única ponte entre UI e Motor: converte cortador (UV + W) e pino para espaço do modelo
 src/utils/catpin/cutterMeshBuilder.ts       → Cortador visual UI (Lasso Cut, Split Line, Plane Cut, Seam Cut deformado 3D)
 src/utils/catpin/cutterSplineHelpers.ts     → LockedViewBasis destro, contorno 3D perimetral e fechamento 2D
 src/utils/catpin/connectorMeshBuilder.ts    → 64-seg In-place Pin/Socket geometry updater
+src/utils/catpin/mirrorCutUtils.ts          → Detecção de simetria X (Spatial Hash 3D), espelhamento de pontos/normais e proteção de corte central
+src/components/CatPin/useCatPinMirrorLifecycle.ts → Ciclo de vida 3D isolado do cortador e pino espelhados (Mirror Cut) na Viewport
 electron/catpin/cutSolids.mjs               → Lâmina Seccionadora Pura em Z=0 (Subtração + Decomposição CSG Manifold3D sem volumes ou cilindros)
 electron/catpin/engine.mjs                  → Motor CSG puro manifold-3d (WASM) com tolerância, folga e auto-sugestão
 scripts/prototype-partition.mjs             → Protótipo geométrico isolado de Partição por Primeira Casca (Shell 1)
@@ -84,4 +94,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-12 (v1.0.1: Extrusão de Detalhe blindada com relevo e taper, conectores 3D com rotação/inversão e auto-updater no startup)
+## Last updated: 2026-11-15 (Refatoração GOLDCODE, sandbox Electron, Viewport Shading, Organizador de Mesa Anti-Suporte, .3MF multi-peças e Release v1.1.0)

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Box, Check, Eye, Layers, RotateCcw, Scissors, Trash2 } from 'lucide-react';
+import { Box, Check, Eye, FlipHorizontal, Layers, RotateCcw, Scissors, Trash2 } from 'lucide-react';
 import type { CatPinPart } from '../../types/catpinMultiParts';
 import type { CatpinConnectorConfig } from '../../utils/catpin/connectorMeshBuilder';
+import type { SymmetryAnalysisResult } from '../../utils/catpin/mirrorCutUtils';
 import { CatPinConnectorFields } from './CatPinConnectorFields';
 import { CatPinPartsList } from './CatPinPartsList';
 import type { CutAxisAlign } from './CatPinViewportToolbar';
@@ -18,6 +19,9 @@ interface CatPinControlsProps {
   isBuilding: boolean;
   errorMsg: string | null;
   pointsCount: number;
+  mirrorEnabled?: boolean;
+  symmetryInfo?: SymmetryAnalysisResult | null;
+  isCutCrossingMirror?: boolean;
   parts?: CatPinPart[];
   selectedPartId?: string;
   canUndo?: boolean;
@@ -32,6 +36,7 @@ interface CatPinControlsProps {
   onFlipCutSide: () => void;
   onInvertPin: () => void;
   onAlignAxis: (axis: CutAxisAlign) => void;
+  onToggleMirror?: () => void;
   onExecuteCut: () => void;
   onSelectPart?: (partId: string) => void;
   onTogglePartVisibility?: (partId: string) => void;
@@ -42,9 +47,10 @@ interface CatPinControlsProps {
 
 export const CatPinControls: React.FC<CatPinControlsProps> = ({
   toolMode, detailDepthMm, detailTaperPct, cutGapMm, isLoopClosed, connectorConfig, isBuilding, errorMsg,
-  pointsCount, parts, selectedPartId, canUndo, canRedo,
+  pointsCount, mirrorEnabled = false, symmetryInfo = null, isCutCrossingMirror = false,
+  parts, selectedPartId, canUndo, canRedo,
   onChangeToolMode, onChangeDetailDepth, onChangeDetailTaper, onChangeCutGap, onChangeConnector,
-  onCloseLoop, onClearPoints, onFlipCutSide, onInvertPin, onAlignAxis, onExecuteCut,
+  onCloseLoop, onClearPoints, onFlipCutSide, onInvertPin, onAlignAxis, onToggleMirror, onExecuteCut,
   onSelectPart, onTogglePartVisibility, onUndo, onRedo, onStartCutSelectedPart,
 }) => {
   const minPoints = 3;
@@ -142,6 +148,36 @@ export const CatPinControls: React.FC<CatPinControlsProps> = ({
           </button>
         )}
 
+        {onToggleMirror && (
+          <div className="flex-col-gap2">
+            {symmetryInfo && (
+              <div className="catpin-slider-row">
+                <span>Simetria X (Esq/Dir):</span>
+                <strong className="text-primary">
+                  {symmetryInfo.isSymmetric
+                    ? `Simétrica (${symmetryInfo.symmetryScorePct.toFixed(1)}%)`
+                    : `${symmetryInfo.symmetryScorePct.toFixed(1)}%`}
+                </strong>
+              </div>
+            )}
+            <button
+              type="button"
+              className="catpin-chip-btn full-width-btn"
+              data-active={mirrorEnabled}
+              onClick={onToggleMirror}
+              title="Mirror Cut: Espelha o corte automaticamente para o lado oposto (Eixo X)"
+            >
+              <FlipHorizontal size={15} aria-hidden="true" />
+              <span>{mirrorEnabled ? ' Mirror Cut (X): ATIVO ✓' : ' Ativar Mirror Cut (Eixo X)'}</span>
+            </button>
+            {mirrorEnabled && isCutCrossingMirror && (
+              <div className="catpin-slider-row">
+                <span>Corte central detectado (espelhamento ignorado)</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {toolMode === 'straight' && (
           <div className="catpin-clearance-group">
             {(['x', 'y', 'z'] as CutAxisAlign[]).map((ax) => (
@@ -198,6 +234,18 @@ export const CatPinControls: React.FC<CatPinControlsProps> = ({
           <Eye size={16} aria-hidden="true" />
           <span>Modo Raio-X (Enxergar Volume Interno)</span>
         </label>
+
+        <div className="smart-field">
+          <label className="catpin-slider-row" htmlFor="catpin-mask-opacity-slider">
+            <span>Opacidade da Máscara:</span>
+            <strong className="text-primary">{connectorConfig.maskOpacityPct ?? 65}%</strong>
+          </label>
+          <input
+            id="catpin-mask-opacity-slider" type="range" min={0} max={90} step={5}
+            value={connectorConfig.maskOpacityPct ?? 65}
+            onChange={(e) => onChangeConnector({ maskOpacityPct: Number(e.target.value) })}
+          />
+        </div>
       </div>
 
       {errorMsg && <div className="catpin-error-banner" role="alert">{errorMsg}</div>}

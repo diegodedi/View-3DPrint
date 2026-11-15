@@ -1,9 +1,14 @@
-import React, { useState, useCallback } from 'react';
+import React, { Suspense, useState, useCallback } from 'react';
 import { useLibrary } from './hooks/useLibrary';
 import { Header } from './components/Header';
 import { ObjectGrid } from './components/ObjectGrid';
-import { DetailsPanel } from './components/DetailsPanel';
-import { SlicerModal } from './components/SlicerModal';
+
+const DetailsPanel = React.lazy(() =>
+  import('./components/DetailsPanel').then((m) => ({ default: m.DetailsPanel }))
+);
+const SlicerModal = React.lazy(() =>
+  import('./components/SlicerModal').then((m) => ({ default: m.SlicerModal }))
+);
 
 /**
  * Root MakerWorld-style 3D Asset Browser displaying the entire root directory in a visual card grid.
@@ -99,28 +104,34 @@ export const App: React.FC = () => {
         onAutoThumbnailGenerated={handleAutoThumbnailGenerated}
       />
 
-      <DetailsPanel
-        item={selectedItem}
-        selectedModelIndex={selectedModelIndex}
-        settings={settings}
-        crealityCatalog={crealityCatalog}
-        onSelectModelIndex={setSelectedModelIndex}
-        onOpenInSlicer={launchInSlicer}
-        onOpenConfiguredInSlicer={launchConfiguredInSlicer}
-        onUpdateSettings={updateSettings}
-        onSaveNotes={handleSaveNotes}
-        onCaptureThumbnail={handleCaptureThumbnail}
-        onRefreshLibrary={refreshLibrary}
-        onClose={() => setSelectedId(null)}
-      />
+      <Suspense fallback={null}>
+        {selectedItem && (
+          <DetailsPanel
+            item={selectedItem}
+            selectedModelIndex={selectedModelIndex}
+            settings={settings}
+            crealityCatalog={crealityCatalog}
+            onSelectModelIndex={setSelectedModelIndex}
+            onOpenInSlicer={launchInSlicer}
+            onOpenConfiguredInSlicer={launchConfiguredInSlicer}
+            onUpdateSettings={updateSettings}
+            onSaveNotes={handleSaveNotes}
+            onCaptureThumbnail={handleCaptureThumbnail}
+            onRefreshLibrary={refreshLibrary}
+            onClose={() => setSelectedId(null)}
+          />
+        )}
 
-      <SlicerModal
-        isOpen={isSlicerModalOpen}
-        settings={settings}
-        crealityCatalog={crealityCatalog}
-        onClose={() => setIsSlicerModalOpen(false)}
-        onSaveSettings={updateSettings}
-      />
+        {isSlicerModalOpen && (
+          <SlicerModal
+            isOpen={isSlicerModalOpen}
+            settings={settings}
+            crealityCatalog={crealityCatalog}
+            onClose={() => setIsSlicerModalOpen(false)}
+            onSaveSettings={updateSettings}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

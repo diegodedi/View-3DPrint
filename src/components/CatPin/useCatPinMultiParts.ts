@@ -8,6 +8,7 @@ import {
   type CatPinPart,
   getPartColor,
 } from '../../types/catpinMultiParts';
+import { computeCreasedNormalsInPlace } from '../../utils/normalSmoother';
 
 /** Converte com segurança qualquer formato de buffer (Uint8Array, Buffer, ArrayBuffer) em ArrayBuffer */
 export function toArrayBuffer(buf: unknown): ArrayBuffer {
@@ -33,7 +34,7 @@ export function parseStlToGeometry(rawBuffer: ArrayBuffer | Uint8Array): THREE.B
   const rawGeom = loader.parse(buffer);
   const weldedGeom = mergeVertices(rawGeom, 1e-4);
   rawGeom.dispose();
-  weldedGeom.computeVertexNormals();
+  computeCreasedNormalsInPlace(weldedGeom);
   return weldedGeom;
 }
 
@@ -80,10 +81,14 @@ export function useCatPinMultiParts(
       const triCount = geom.index ? geom.index.count / 3 : (pos ? pos.count / 3 : 0);
       const cleanName = initialModelName.replace(/\.[^/.]+$/, '');
 
+      const clonedRoot = geom.clone();
+      if (!clonedRoot.attributes.aCavity) {
+        computeCreasedNormalsInPlace(clonedRoot);
+      }
       const initialPart: CatPinPart = {
         id: 'part_root',
         name: `${cleanName} (Original)`,
-        geometry: geom.clone(),
+        geometry: clonedRoot,
         stlBuffer: rawBuffer || new ArrayBuffer(0),
         color: getPartColor(0),
         triangles: triCount,
@@ -101,65 +106,98 @@ export function useCatPinMultiParts(
     [initialModelName]
   );
 
-  const applyCutResult = useCallback((targetPartId: string, cutResult: CatpinCutResult) => {
-    if (!cutResult.partABuffer || !cutResult.partBBuffer) return;
+  const applyCutResult = useCallback(
+    (targetPartId: string, cutResult: CatpinCutResult, mirrorCutResult?: CatpinCutResult | null) => {
+      if (!cutResult.partABuffer || !cutResult.partBBuffer) return;
 
-    setParts((prevParts) => {
-      const targetIdx = prevParts.findIndex((p) => p.id === targetPartId);
-      const targetPart = targetIdx >= 0 ? prevParts[targetIdx] : prevParts[0];
-      if (!targetPart) return prevParts;
+      setParts((prevParts) => {
+        const targetIdx = prevParts.findIndex((p) => p.id === targetPartId);
+        const targetPart = targetIdx >= 0 ? prevParts[targetIdx] : prevParts[0];
+        if (!targetPart) return prevParts;
 
-      setUndoStack((prev) => [
-        ...prev,
-        { parts: prevParts, selectedPartId: targetPartId, description: `Corte em ${targetPart.name}` },
-      ]);
-      setRedoStack([]);
+        const hasMirror = Boolean(mirrorCutResult?.partABuffer && mirrorCutResult?.partBBuffer);
+        const bodyBuffer = hasMirror ? mirrorCutResult!.partABuffer! : cutResult.partABuffer!;
+        const bodyTriHint = hasMirror ? mirrorCutResult!.partATriangles : cutResult.partATriangles;
 
-      const geomA = parseStlToGeometry(cutResult.partABuffer!);
-      const geomB = parseStlToGeometry(cutResult.partBBuffer!);
-      const baseLevel = targetPart.cutLevel + 1;
-      const baseName = targetPart.name.replace(/ \(Original\)$/, '');
-      const stamp = Date.now();
+        setUndoStack((prev) => [
+          ...prev,
+          {
+            parts: prevParts,
+            selectedPartId: targetPartId,
+            description: `${hasMirror ? 'Mirror Cut' : 'Corte'} em ${targetPart.name}`,
+          },
+        ]);
+        setRedoStack([]);
 
-      const trisA = cutResult.partATriangles ?? (geomA.index ? geomA.index.count / 3 : geomA.attributes.position.count / 3);
-      const trisB = cutResult.partBTriangles ?? (geomB.index ? geomB.index.count / 3 : geomB.attributes.position.count / 3);
+        const geomA = parseStlToGeometry(bodyBuffer);
+        const geomB = parseStlToGeometry(cutResult.partBBuffer!);
+        const baseLevel = targetPart.cutLevel + 1;
+        const baseName = targetPart.name.replace(/ \(Original\)$/, '');
+        const stamp = Date.now();
 
-      const partA: CatPinPart = {
-        id: `${targetPart.id}_A_${stamp}`,
-        name: `${baseName} · Peça A`,
-        geometry: geomA,
-        stlBuffer: cutResult.partABuffer!,
-        color: targetPart.color,
-        triangles: trisA,
-        volumeMm3: 0,
-        parentPartId: targetPart.id,
-        cutLevel: baseLevel,
-        visible: true,
-        explodeDir: targetPart.explodeDir,
-      };
+        const trisA = bodyTriHint ?? (geomA.index ? geomA.index.count / 3 : geomA.attributes.position.count / 3);
+        const trisB = cutResult.partBTriangles ?? (geomB.index ? geomB.index.count / 3 : geomB.attributes.position.count / 3);
 
-      const partB: CatPinPart = {
-        id: `${targetPart.id}_B_${stamp}`,
-        name: `${baseName} · Peça B`,
-        geometry: geomB,
-        stlBuffer: cutResult.partBBuffer!,
-        color: getPartColor(prevParts.length),
-        triangles: trisB,
-        volumeMm3: 0,
-        parentPartId: targetPart.id,
-        cutLevel: baseLevel,
-        visible: true,
-        explodeDir: cutResult.explodeDirStl,
-      };
+        const partA: CatPinPart = {
+          id: `${targetPart.id}_A_${stamp}`,
+          name: `${baseName} · Peça A`,
+          geometry: geomA,
+          stlBuffer: bodyBuffer,
+          color: targetPart.color,
+          triangles: trisA,
+          volumeMm3: 0,
+          parentPartId: targetPart.id,
+          cutLevel: baseLevel,
+          visible: true,
+          explodeDir: targetPart.explodeDir,
+        };
 
-      const nextParts = [...prevParts];
-      if (targetIdx >= 0) nextParts.splice(targetIdx, 1, partA, partB);
-      else nextParts.push(partA, partB);
+        const partB: CatPinPart = {
+          id: `${targetPart.id}_B_${stamp}`,
+          name: `${baseName} · Peça B`,
+          geometry: geomB,
+          stlBuffer: cutResult.partBBuffer!,
+          color: getPartColor(prevParts.length),
+          triangles: trisB,
+          volumeMm3: 0,
+          parentPartId: targetPart.id,
+          cutLevel: baseLevel,
+          visible: true,
+          explodeDir: cutResult.explodeDirStl,
+        };
 
-      setSelectedPartId(trisA >= trisB ? partA.id : partB.id);
-      return nextParts;
-    });
-  }, []);
+        const createdParts: CatPinPart[] = [partA, partB];
+
+        if (hasMirror && mirrorCutResult?.partBBuffer) {
+          const geomC = parseStlToGeometry(mirrorCutResult.partBBuffer);
+          const trisC =
+            mirrorCutResult.partBTriangles ??
+            (geomC.index ? geomC.index.count / 3 : geomC.attributes.position.count / 3);
+          createdParts.push({
+            id: `${targetPart.id}_C_${stamp}`,
+            name: `${baseName} · Peça C (Mirror)`,
+            geometry: geomC,
+            stlBuffer: mirrorCutResult.partBBuffer,
+            color: getPartColor(prevParts.length + 1),
+            triangles: trisC,
+            volumeMm3: 0,
+            parentPartId: targetPart.id,
+            cutLevel: baseLevel,
+            visible: true,
+            explodeDir: mirrorCutResult.explodeDirStl,
+          });
+        }
+
+        const nextParts = [...prevParts];
+        if (targetIdx >= 0) nextParts.splice(targetIdx, 1, ...createdParts);
+        else nextParts.push(...createdParts);
+
+        setSelectedPartId(trisA >= trisB ? partA.id : partB.id);
+        return nextParts;
+      });
+    },
+    []
+  );
 
   const undo = useCallback(() => {
     setUndoStack((prevUndo) => {

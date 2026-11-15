@@ -27,6 +27,13 @@
   --color-part-8: #818cf8;
   --color-part-9: #a3e635;
 
+  /* Resin Viewport Shading Swatch Tokens */
+  --color-resin-clay: #8f959e;
+  --color-resin-jade: #46b888;
+  --color-resin-knight: #5278c2;
+  --color-resin-ochre: #c4a348;
+  --color-resin-wax: #b8654b;
+
   /* Typography - Required Tokens (Rule 5.1) */
   --text-xs: 12px;
   --text-sm: 14px;

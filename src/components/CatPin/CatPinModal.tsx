@@ -10,6 +10,7 @@ import { useCatPinShortcuts } from './useCatPinShortcuts';
 import { useCatPinPlateArrangement } from './useCatPinPlateArrangement';
 import { useCatPinModelLoader } from './useCatPinModelLoader';
 import { resolveWorkingObjectFolder } from '../../utils/modelFolderResolver';
+import { resolvePrinterBedDimensions, toBedDimensionsOptions } from '../../utils/plate/printerBedResolver';
 
 interface CatPinModalProps {
   isOpen: boolean;
@@ -17,6 +18,9 @@ interface CatPinModalProps {
   modelPath: string;
   objectFolderPath?: string;
   sourceObject3D?: THREE.Object3D | null;
+  printerName?: string;
+  catalogBedDimensions?: { widthMm: number; depthMm: number; heightMm: number };
+  slicerExecutablePath?: string;
   onClose: () => void;
   onSavedParts?: (folderPath: string) => void;
 }
@@ -30,6 +34,9 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
   modelPath,
   objectFolderPath,
   sourceObject3D,
+  printerName,
+  catalogBedDimensions,
+  slicerExecutablePath,
   onClose,
   onSavedParts,
 }) => {
@@ -42,6 +49,12 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
     });
   }, [objectFolderPath, modelPath]);
 
+  const bedInfo = useMemo(
+    () => resolvePrinterBedDimensions(printerName, catalogBedDimensions),
+    [printerName, catalogBedDimensions]
+  );
+  const bedOptions = useMemo(() => toBedDimensionsOptions(bedInfo), [bedInfo]);
+
   const {
     parts, activePart, selectedPartId, isSaving, canUndo, canRedo,
     setSelectedPartId, initFromGeometry, applyCutResult, undo, redo,
@@ -49,9 +62,9 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
   } = useCatPinMultiParts(modelName, onSavedParts, workingFolder);
 
   const {
-    plateArrangement, isPlateMode, isArranging, isExporting3mf,
-    arrangeOnBed, togglePlateMode, saveMultiPart3mf, openInSlicer,
-  } = useCatPinPlateArrangement();
+    plateArrangement, isPlateMode, isArranging, isExporting3mf, savedNotice,
+    arrangeOnBed, togglePlateMode, resetPlateArrangement, saveMultiPart3mf, openInSlicer,
+  } = useCatPinPlateArrangement(bedOptions, slicerExecutablePath);
 
   const meshesGetterRef = useRef<() => CatpinLiveMeshes>(() => ({
     cutterMesh: null, pinMesh: null, socketMesh: null, mainMesh: null, hasManualPin: false,
@@ -61,15 +74,17 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
     toolMode, detailDepthMm, detailTaperPct, cutGapMm, isLoopClosed, connectorConfig,
     cutPoints, polylineFlipSide, straightFlipTrigger, pinFlipTrigger,
     axisAlignRequest, result, explodeDistance,
+    mirrorEnabled, symmetryInfo, isCutCrossingMirror,
     isBuilding, errorMsg,
     setDetailDepthMm, setDetailTaperPct, setCutGapMm, setIsLoopClosed, setCutPoints,
     setResult, setExplodeDistance, setErrorMsg,
     handleChangeToolMode, handleClearPoints, handleFlipCutSide,
     handleAlignAxis, handleInvertPin, handleChangeConnector,
-    handleExecuteCut, handleStartCutSelectedPart,
+    handleToggleMirror, handleExecuteCut, handleStartCutSelectedPart,
   } = useCatPinCutWorkflow({
     selectedPartId,
     activePart,
+    rootGeometry: parts[0]?.geometry ?? null,
     applyCutResult,
     meshesGetterRef,
   });
@@ -86,6 +101,13 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
   useEffect(() => {
     if (loaderWarning) setMultiMeshWarning(loaderWarning);
   }, [loaderWarning]);
+
+  useEffect(() => {
+    if (parts.length <= 1 && result) setResult(null);
+    if (plateArrangement && plateArrangement.placements.size !== parts.length) {
+      resetPlateArrangement();
+    }
+  }, [parts.length, result, setResult, plateArrangement, resetPlateArrangement]);
 
   useEffect(() => {
     if (!activeGeometry || !window.electronAPI) return;
@@ -157,6 +179,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             straightFlipTrigger={straightFlipTrigger}
             pinFlipTrigger={pinFlipTrigger}
             axisAlignRequest={axisAlignRequest}
+            mirrorEnabled={mirrorEnabled}
             parts={parts}
             selectedPartId={selectedPartId}
             isDraftMode={!result}
@@ -179,6 +202,8 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             canUndo={canUndo}
             canRedo={canRedo}
             workingFolder={workingFolder}
+            printerLabel={bedInfo.printerLabel}
+            savedNotice={savedNotice}
             isPlateMode={isPlateMode}
             isArranging={isArranging}
             isExporting3mf={isExporting3mf}
@@ -193,7 +218,10 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             }}
             onRedo={redo}
             onStartCutSelectedPart={handleStartCutSelectedPart}
-            onSaveAllFiles={() => saveAllParts(result)}
+            onSaveAllFiles={async () => {
+              await saveMultiPart3mf(modelName, parts, workingFolder, onSavedParts);
+              await saveAllParts(result);
+            }}
             onSaveSelectedPart={saveSelectedPart}
             onArrangeOnBed={() => arrangeOnBed(parts)}
             onTogglePlateMode={togglePlateMode}
@@ -211,6 +239,9 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             isBuilding={isBuilding}
             errorMsg={errorMsg}
             pointsCount={cutPoints.length}
+            mirrorEnabled={mirrorEnabled}
+            symmetryInfo={symmetryInfo}
+            isCutCrossingMirror={isCutCrossingMirror}
             parts={parts}
             selectedPartId={selectedPartId}
             canUndo={canUndo}
@@ -225,6 +256,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
             onFlipCutSide={handleFlipCutSide}
             onInvertPin={handleInvertPin}
             onAlignAxis={handleAlignAxis}
+            onToggleMirror={handleToggleMirror}
             onExecuteCut={handleExecuteCut}
             onSelectPart={(id) => { setSelectedPartId(id); handleClearPoints(); }}
             onTogglePartVisibility={togglePartVisibility}

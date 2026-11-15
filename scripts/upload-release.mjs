@@ -13,7 +13,8 @@ if (!token) {
   process.exit(1);
 }
 
-async function uploadAsset(releaseId, filePath, assetName, contentType) {
+async function uploadAsset(params) {
+  const { releaseId, filePath, assetName, contentType } = params;
   if (!fs.existsSync(filePath)) {
     console.warn(`[Upload] Arquivo não encontrado: ${filePath}`);
     return;
@@ -52,8 +53,8 @@ async function main() {
   const exePath = path.join(distDir, exeName);
   const ymlPath = path.join(distDir, 'latest.yml');
 
-  await uploadAsset(releaseId, ymlPath, 'latest.yml', 'application/x-yaml');
-  await uploadAsset(releaseId, exePath, exeName, 'application/octet-stream');
+  await uploadAsset({ releaseId, filePath: ymlPath, assetName: 'latest.yml', contentType: 'application/x-yaml' });
+  await uploadAsset({ releaseId, filePath: exePath, assetName: exeName, contentType: 'application/octet-stream' });
   console.log('[Upload] Concluído com sucesso!');
 }
 

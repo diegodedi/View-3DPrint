@@ -1,6 +1,6 @@
 {
   "name": "view-3dprint",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Visualizador e organizador de objetos 3D para impressao com abertura em 1 clique no fatiador Creality Print",
   "main": "electron/main.cjs",
   "author": "DieTools",
@@ -24,7 +24,12 @@
   "build": {
     "appId": "com.dietools.view3dprint",
     "productName": "View 3DPrint",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "sample-library/**/*",
+      "electron/catpin/**/*",
+      "node_modules/manifold-3d/**/*"
+    ],
     "directories": {
       "output": "release"
     },
@@ -65,7 +70,6 @@
     "electron-updater": "^6.8.11",
     "lucide-react": "^0.454.0",
     "manifold-3d": "^3.5.4",
-    "onnxruntime-web": "^1.31.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.170.0"

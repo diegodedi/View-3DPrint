@@ -2,7 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const { scanLibraryFolder, saveFolderMetadata } = require('./scanner.cjs');
+const { registerLocalAssetScheme, registerLocalAssetProtocol } = require('./localAssetProtocol.cjs');
+const { scanLibraryFolderAsync, saveFolderMetadata } = require('./scanner.cjs');
 const {
   loadAppSettings,
   saveAppSettings,
@@ -11,7 +12,7 @@ const {
   getCrealityCatalogForSlicer,
 } = require('./slicerService.cjs');
 const {
-  saveMultiPart3mfFile,
+  saveMultiPart3mfFileAsync,
   openMultiPartProjectInSlicer,
 } = require('./multiPart3mfService.cjs');
 const {
@@ -22,6 +23,8 @@ const {
 const { initAutoUpdater, checkForUpdates } = require('./updater.cjs');
 
 let mainWindow = null;
+
+registerLocalAssetScheme();
 
 function getDefaultLibraryPath() {
   return path.join(app.getAppPath(), 'sample-library');
@@ -41,7 +44,7 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -67,11 +70,17 @@ function createMainWindow() {
 
 function registerIpcHandlers() {
   const sampleLib = getDefaultLibraryPath();
+  const cacheDir = app.getPath('userData');
 
-  ipcMain.handle('app:get-initial-state', () => {
+  ipcMain.handle('app:get-initial-state', async () => {
     const settings = loadAppSettings(sampleLib);
-    const items = scanLibraryFolder(settings.libraryPath);
-    return { settings, items };
+    const activeSlicer = settings.slicers.find((s) => s.id === settings.activeSlicerId);
+    const crealityCatalog = getCrealityCatalogForSlicer(
+      activeSlicer ? activeSlicer.executablePath : null,
+      settings.crealityPrinter
+    );
+    const items = await scanLibraryFolderAsync(settings.libraryPath, { cacheDir });
+    return { settings, items, crealityCatalog };
   });
 
   ipcMain.handle('app:select-library-folder', async () => {
@@ -83,33 +92,38 @@ function registerIpcHandlers() {
 
     const chosenPath = result.filePaths[0];
     const settings = saveAppSettings({ libraryPath: chosenPath }, sampleLib);
-    const items = scanLibraryFolder(chosenPath);
+    const items = await scanLibraryFolderAsync(chosenPath, { cacheDir });
     return { settings, items };
   });
 
-  ipcMain.handle('app:rescan-library', (_event, folderPath) => {
+  ipcMain.handle('app:rescan-library', async (_event, folderPath) => {
     const settings = loadAppSettings(sampleLib);
     const target = folderPath || settings.libraryPath;
-    const items = scanLibraryFolder(target);
+    const items = await scanLibraryFolderAsync(target, { cacheDir });
     return { settings, items };
   });
 
-  ipcMain.handle('app:read-model-buffer', (_event, filePath) => {
-    if (!filePath || !fs.existsSync(filePath)) {
+  ipcMain.handle('app:read-model-buffer', async (_event, filePath) => {
+    if (!filePath) throw new Error('Arquivo 3D não encontrado.');
+    try {
+      const buffer = await fs.promises.readFile(filePath);
+      return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } catch {
       throw new Error('Arquivo 3D não encontrado.');
     }
-    const buffer = fs.readFileSync(filePath);
-    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   });
 
-  ipcMain.handle('app:read-image-data-url', (_event, imagePath) => {
+  ipcMain.handle('app:read-image-data-url', async (_event, imagePath) => {
     if (!imagePath) return null;
     if (imagePath.startsWith('data:image/')) return imagePath;
-    if (!fs.existsSync(imagePath)) return null;
-    const ext = path.extname(imagePath).toLowerCase().replace('.', '') || 'png';
-    const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
-    const base64 = fs.readFileSync(imagePath).toString('base64');
-    return `data:${mime};base64,${base64}`;
+    try {
+      const ext = path.extname(imagePath).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+      const raw = await fs.promises.readFile(imagePath);
+      return `data:${mime};base64,${raw.toString('base64')}`;
+    } catch {
+      return null;
+    }
   });
 
   ipcMain.handle('app:open-in-slicer', async (_event, { modelPath, slicerExecutablePath }) => {
@@ -216,9 +230,19 @@ function registerIpcHandlers() {
   ipcMain.handle('app:suggest-catpin-pin', (_event, payload) => suggestCatpinPinForUi(payload));
   ipcMain.handle('app:diagnose-catpin-model', (_event, payload) => diagnoseCatpinModelForUi(payload));
 
-  ipcMain.handle('app:save-multi-part-3mf', async (_event, { projectName, parts, defaultPath }) => {
-    const cleanName = (projectName || 'Projeto').replace(/[^a-zA-Z0-9_-]/g, '_');
+  ipcMain.handle('app:save-multi-part-3mf', async (_event, payload) => {
+    const { projectName, parts, targetFolder, defaultPath, bedWidthMm, bedDepthMm } = payload || {};
+    const cleanBase = String(projectName || 'Projeto').replace(/\.[^/.]+$/, '');
+    const cleanName = cleanBase.replace(/[^a-zA-Z0-9_-]/g, '_');
     const defaultFileName = `${cleanName}_MesaCompleta.3mf`;
+    const options = { bedWidthMm, bedDepthMm };
+
+    if (targetFolder && typeof targetFolder === 'string') {
+      const outFile = path.join(targetFolder, defaultFileName);
+      await saveMultiPart3mfFileAsync({ filePath: outFile, projectName: cleanBase, parts, options });
+      return { success: true, savedPath: outFile, folder: targetFolder };
+    }
+
     const saveOptions = {
       title: 'Salvar Projeto Completo da Mesa (.3MF)',
       defaultPath: defaultPath ? path.join(defaultPath, defaultFileName) : defaultFileName,
@@ -228,13 +252,19 @@ function registerIpcHandlers() {
     if (res.canceled || !res.filePath) {
       return { success: false, savedPath: '' };
     }
-    saveMultiPart3mfFile(res.filePath, projectName, parts);
+    await saveMultiPart3mfFileAsync({ filePath: res.filePath, projectName: cleanBase, parts, options });
     shell.showItemInFolder(res.filePath);
-    return { success: true, savedPath: res.filePath };
+    return { success: true, savedPath: res.filePath, folder: path.dirname(res.filePath) };
   });
 
-  ipcMain.handle('app:open-multi-part-in-slicer', async (_event, { projectName, parts, slicerExecutablePath }) => {
-    return openMultiPartProjectInSlicer(projectName, parts, slicerExecutablePath);
+  ipcMain.handle('app:open-multi-part-in-slicer', async (_event, payload) => {
+    const { projectName, parts, slicerExecutablePath, bedWidthMm, bedDepthMm } = payload || {};
+    return openMultiPartProjectInSlicer({
+      projectName,
+      parts,
+      slicerExecutablePath,
+      options: { bedWidthMm, bedDepthMm },
+    });
   });
 
   ipcMain.handle('app:check-for-updates', () => {
@@ -244,6 +274,7 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  registerLocalAssetProtocol();
   registerIpcHandlers();
   createMainWindow();
   initAutoUpdater(mainWindow);

@@ -15,6 +15,7 @@ import { useCatPinPoints3D } from './useCatPinPoints3D';
 import { useCatPinResultMesh } from './useCatPinResultMesh';
 import { useCatPinScene } from './useCatPinScene';
 import { useCatPinCutterLifecycle } from './useCatPinCutterLifecycle';
+import { useCatPinMirrorLifecycle } from './useCatPinMirrorLifecycle';
 
 export interface CatpinLiveMeshes {
   cutterMesh: THREE.Mesh | null;
@@ -22,6 +23,8 @@ export interface CatpinLiveMeshes {
   socketMesh: THREE.Mesh | null;
   mainMesh: THREE.Mesh | null;
   hasManualPin: boolean;
+  mirrorCutterMesh?: THREE.Mesh | null;
+  mirrorPinMesh?: THREE.Mesh | null;
 }
 
 interface CatPinCanvasProps {
@@ -38,6 +41,7 @@ interface CatPinCanvasProps {
   straightFlipTrigger: number;
   pinFlipTrigger: number;
   axisAlignRequest: { axis: CutAxisAlign; tick: number } | null;
+  mirrorEnabled?: boolean;
   parts?: CatPinPart[];
   selectedPartId?: string;
   isDraftMode?: boolean;
@@ -52,7 +56,7 @@ interface CatPinCanvasProps {
 export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
   sourceGeometry, toolMode, detailDepthMm, detailTaperPct = 0, isLoopClosed, connectorConfig,
   result, explodeDistance, cutPoints, polylineFlipSide, straightFlipTrigger, pinFlipTrigger, axisAlignRequest,
-  parts = [], selectedPartId = '', isDraftMode = true,
+  mirrorEnabled = false, parts = [], selectedPartId = '', isDraftMode = true,
   isPlateMode = false, plateArrangement = null,
   onUpdateCutPoints, onCloseLoop, onInvertPin, onRegisterMeshesGetter,
 }) => {
@@ -61,6 +65,9 @@ export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
   const cutterMeshRef = useRef<THREE.Mesh | null>(null);
   const pinMeshRef = useRef<THREE.Mesh | null>(null);
   const socketMeshRef = useRef<THREE.Mesh | null>(null);
+  const mirrorCutterMeshRef = useRef<THREE.Mesh | null>(null);
+  const mirrorPinMeshRef = useRef<THREE.Mesh | null>(null);
+  const mirrorSocketMeshRef = useRef<THREE.Mesh | null>(null);
   const modelBoxRef = useRef<THREE.Box3>(new THREE.Box3());
   const straightPoseRef = useRef<{ pos: THREE.Vector3; quat: THREE.Quaternion } | null>(null);
   const autoPoseRef = useRef<{ position: THREE.Vector3; quaternion: THREE.Quaternion } | null>(null);
@@ -86,6 +93,7 @@ export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
     onRegisterMeshesGetter(() => ({
       cutterMesh: cutterMeshRef.current, pinMesh: pinMeshRef.current,
       socketMesh: socketMeshRef.current, mainMesh: mainMeshRef.current, hasManualPin,
+      mirrorCutterMesh: mirrorCutterMeshRef.current, mirrorPinMesh: mirrorPinMeshRef.current,
     }));
   }, [onRegisterMeshesGetter, hasManualPin]);
 
@@ -124,8 +132,18 @@ export const CatPinCanvas: React.FC<CatPinCanvasProps> = ({
 
   useCatPinCutterLifecycle({
     sceneRef, cameraRef, mainMeshRef, cutterMeshRef, modelBoxRef, straightPoseRef,
-    autoPoseRef, toolMode, sourceGeometry, detailDepthMm, detailTaperPct, cutPoints, polylineFlipSide, result,
+    autoPoseRef, toolMode, sourceGeometry, detailDepthMm, detailTaperPct,
+    maskOpacityPct: connectorConfig.maskOpacityPct ?? 65,
+    cutPoints, polylineFlipSide, result,
     syncConnectorsWithCutter, setSyncTick, renderScene,
+  });
+
+  useCatPinMirrorLifecycle({
+    sceneRef, cameraRef, cutterMeshRef, pinMeshRef,
+    mirrorCutterMeshRef, mirrorPinMeshRef, mirrorSocketMeshRef, modelBoxRef,
+    mirrorEnabled, toolMode, detailDepthMm, detailTaperPct, connectorConfig,
+    cutPoints, polylineFlipSide, hasManualPin, syncTick,
+    straightFlipTrigger, pinFlipTrigger, result, renderScene,
   });
 
   const applyStraightOrientation = useCallback((axis: CutAxisAlign) => {

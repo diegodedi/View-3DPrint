@@ -192,8 +192,7 @@ export function executeCut(wasm, input) {
     const { pin, socket, pinFootprint, embed, socketCavityVolume } = buildConnectorSolids(
       wasm,
       { ...c, position: connPos, axis: effAxis, xAxis: effXAxis },
-      g,
-      dirToSock
+      { cutNormal: dirToSock }
     );
 
     const anchor = pin.intersect(pinBase).volume();

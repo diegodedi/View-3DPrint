@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   AppSettings,
   CrealityCatalog,
@@ -30,16 +30,30 @@ export function useSlicerSettings(
 ) {
   const [settings, setSettings] = useState<AppSettings>(FALLBACK_SETTINGS);
   const [crealityCatalog, setCrealityCatalog] = useState<CrealityCatalog>(EMPTY_CATALOG);
+  const lastCatalogKeyRef = useRef<string>('');
+
+  const hydrateInitialCatalog = useCallback((loadedSettings: AppSettings, catalog?: CrealityCatalog) => {
+    if (!catalog) return;
+    const activeSlicer = loadedSettings.slicers.find((s) => s.id === loadedSettings.activeSlicerId);
+    const exePath = activeSlicer ? activeSlicer.executablePath : '';
+    lastCatalogKeyRef.current = `${exePath}::${loadedSettings.crealityPrinter || ''}`;
+    setCrealityCatalog(catalog);
+  }, []);
 
   useEffect(() => {
     let active = true;
     async function syncCrealityCatalog() {
-      if (!window.electronAPI) return;
+      if (!window.electronAPI || settings === FALLBACK_SETTINGS) return;
       const activeSlicer = settings.slicers.find((s) => s.id === settings.activeSlicerId);
       const exePath = activeSlicer ? activeSlicer.executablePath : null;
+      const catalogKey = `${exePath || ''}::${settings.crealityPrinter || ''}`;
+      if (lastCatalogKeyRef.current === catalogKey) return;
       try {
         const cat = await window.electronAPI.getCrealityCatalog(exePath, settings.crealityPrinter);
-        if (active) setCrealityCatalog(cat);
+        if (active) {
+          lastCatalogKeyRef.current = catalogKey;
+          setCrealityCatalog(cat);
+        }
       } catch {
         if (active) setCrealityCatalog(EMPTY_CATALOG);
       }
@@ -48,7 +62,7 @@ export function useSlicerSettings(
     return () => {
       active = false;
     };
-  }, [settings.slicers, settings.activeSlicerId, settings.crealityPrinter]);
+  }, [settings]);
 
   const updateSettings = useCallback(async (partial: Partial<AppSettings>) => {
     if (!window.electronAPI) return;
@@ -105,6 +119,7 @@ export function useSlicerSettings(
     settings,
     crealityCatalog,
     setSettings,
+    hydrateInitialCatalog,
     updateSettings,
     launchInSlicer,
     launchConfiguredInSlicer,

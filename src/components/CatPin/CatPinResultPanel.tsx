@@ -15,6 +15,8 @@ interface CatPinResultPanelProps {
   canUndo: boolean;
   canRedo: boolean;
   workingFolder?: string;
+  printerLabel?: string;
+  savedNotice?: string | null;
   isPlateMode?: boolean;
   isArranging?: boolean;
   isExporting3mf?: boolean;
@@ -45,6 +47,8 @@ export const CatPinResultPanel: React.FC<CatPinResultPanelProps> = ({
   canUndo,
   canRedo,
   workingFolder,
+  printerLabel,
+  savedNotice,
   isPlateMode = false,
   isArranging = false,
   isExporting3mf = false,
@@ -129,6 +133,12 @@ export const CatPinResultPanel: React.FC<CatPinResultPanelProps> = ({
           </>
         ) : (
           <div className="catpin-plate-status">
+            {printerLabel && (
+              <div className="catpin-slider-row">
+                <span>Impressora:</span>
+                <strong className="text-main">{printerLabel}</strong>
+              </div>
+            )}
             <div className="catpin-slider-row">
               <span>Mesa Útil:</span>
               <strong className="text-primary">
@@ -140,7 +150,7 @@ export const CatPinResultPanel: React.FC<CatPinResultPanelProps> = ({
               <strong className="text-main">{plateArrangement?.bedUtilizationPercent ?? 0}%</strong>
             </div>
             <span className="catpin-helper-text">
-              Peças orientadas pela face de corte em Z=0 (menor suporte, maior adesão).
+              Peças orientadas automaticamente para minimizar suportes no fatiador.
             </span>
           </div>
         )}
@@ -186,6 +196,13 @@ export const CatPinResultPanel: React.FC<CatPinResultPanelProps> = ({
             <Folder size={14} aria-hidden="true" />
             <span className="catpin-destination-label">Destino:</span>
             <span className="catpin-destination-path">{getFolderDisplayName(workingFolder)}</span>
+          </div>
+        )}
+
+        {savedNotice && (
+          <div className="catpin-success-banner">
+            <Check size={16} aria-hidden="true" />
+            <span>{savedNotice}</span>
           </div>
         )}
 

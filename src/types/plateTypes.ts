@@ -17,8 +17,10 @@ export interface PlatePartBounds {
 export interface PlatePartPlacement {
   partId: string;
   name: string;
-  /** Posição final (X, Y, Z) na mesa em milímetros. Z sempre assenta em 0. */
+  /** Posição Three.js (X, Y, Z) em mm compensando o centro rotacionado da peça. */
   position: [number, number, number];
+  /** Offset (X, Y, Z) do centro da peça na mesa em relação ao centro (0,0) da mesa. */
+  bedOffset: [number, number, number];
   /** Quatérnion de rotação [x, y, z, w] que orienta a melhor face plana para baixo. */
   rotation: [number, number, number, number];
   bounds: PlatePartBounds;

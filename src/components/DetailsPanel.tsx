@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import type * as THREE from 'three';
 import { ExternalLink, FolderOpen, X } from 'lucide-react';
 import type {
   AppSettings,
@@ -12,12 +12,18 @@ import type {
   SmartSliceConfig,
 } from '../types/models';
 import { formatFileSize } from '../utils/formatters';
-import { analyzeMeshGeometry, recommendCrealitySliceConfig } from '../utils/meshAnalyzer';
-import { extractSerializedMesh } from '../utils/meshExtractor';
+import { recommendCrealitySliceConfig } from '../utils/meshAnalyzer';
+import {
+  analyzeMeshGeometryAsync,
+  extractSerializedMeshAsync,
+} from '../utils/meshWorkerClient';
 import { SmartSlicePanel } from './SmartSlicePanel';
 import { Viewer3D } from './Viewer3D';
 import { ModelNotesField } from './ModelNotesField';
-import { CatPinModal } from './CatPin/CatPinModal';
+
+const CatPinModal = React.lazy(() =>
+  import('./CatPin/CatPinModal').then((m) => ({ default: m.CatPinModal }))
+);
 
 interface DetailsPanelProps {
   item: PrintObjectItem | null;
@@ -62,20 +68,28 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isCatpinOpen, setIsCatpinOpen] = useState<boolean>(false);
+  const pendingSelectPlateRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIntent('auto');
     setIsCatpinOpen(false);
-  }, [item]);
+  }, [item?.id]);
+
+  useEffect(() => {
+    if (pendingSelectPlateRef.current && item?.models) {
+      const plateIdx = item.models.findIndex((m) => /_mesacompleta\.3mf$/i.test(m.name));
+      if (plateIdx >= 0) {
+        pendingSelectPlateRef.current = false;
+        onSelectModelIndex(plateIdx);
+      }
+    }
+  }, [item?.models, onSelectModelIndex]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isCatpinOpen) {
-          setIsCatpinOpen(false);
-        } else {
-          onClose();
-        }
+        if (isCatpinOpen) setIsCatpinOpen(false);
+        else onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -85,16 +99,12 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
   const handleMeshLoaded = useCallback(
     (object3d: THREE.Object3D, dims: BoundingBoxDimensions) => {
       loadedMeshRef.current = { object3d, dims };
-      const analyzed = analyzeMeshGeometry(object3d, dims);
-      setMetrics(analyzed);
-      setSliceConfig(
-        recommendCrealitySliceConfig({
-          metrics: analyzed,
-          intent: 'auto',
-          printerName: settings.crealityPrinter,
-        })
-      );
       setIntent('auto');
+      analyzeMeshGeometryAsync(object3d, dims).then((analyzed) => {
+        if (loadedMeshRef.current?.object3d !== object3d) return;
+        setMetrics(analyzed);
+        setSliceConfig(recommendCrealitySliceConfig({ metrics: analyzed, intent: 'auto', printerName: settings.crealityPrinter }));
+      });
     },
     [settings.crealityPrinter]
   );
@@ -102,13 +112,7 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
   const handleChangeIntent = (nextIntent: PrintIntent) => {
     setIntent(nextIntent);
     if (!metrics) return;
-    setSliceConfig(
-      recommendCrealitySliceConfig({
-        metrics,
-        intent: nextIntent,
-        printerName: settings.crealityPrinter,
-      })
-    );
+    setSliceConfig(recommendCrealitySliceConfig({ metrics, intent: nextIntent, printerName: settings.crealityPrinter }));
   };
 
   const handleChangePrinter = (printerName: string) => {
@@ -123,7 +127,11 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
     const activeModel = item.models[selectedModelIndex] || item.models[0];
     try {
       setIsSending(true);
-      const meshPayload = extractSerializedMesh(
+      if (activeModel.extension.toUpperCase() === '3MF') {
+        onOpenInSlicer(activeModel.path);
+        return;
+      }
+      const meshPayload = await extractSerializedMeshAsync(
         loadedMeshRef.current.object3d,
         loadedMeshRef.current.dims
       );
@@ -138,6 +146,13 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
   const activeModel = item.models[selectedModelIndex] || item.models[0];
   const activeSlicer = settings.slicers.find((s) => s.id === settings.activeSlicerId);
   const slicerLabel = activeSlicer ? activeSlicer.name : 'Creality Print';
+  const plate3mfModel = item.models.find((m) => /_mesacompleta\.3mf$/i.test(m.name));
+  const cutPartModels = item.models.filter((m) => /_peca\d+/i.test(m.name));
+  const batchSlicerPaths = plate3mfModel
+    ? plate3mfModel.path
+    : cutPartModels.length > 0
+      ? cutPartModels.map((m) => m.path)
+      : item.models.map((m) => m.path);
 
   return (
     <div
@@ -216,11 +231,15 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
               <button
                 type="button"
                 className="btn btn-primary full-width-btn"
-                onClick={() => onOpenInSlicer(item.models.map((m) => m.path))}
-                title="Abre todas as peças deste projeto juntas no fatiador"
+                onClick={() => onOpenInSlicer(batchSlicerPaths)}
+                title="Abre a mesa completa ou todas as peças separadas juntas no fatiador"
               >
                 <ExternalLink size={15} aria-hidden="true" />
-                <span>Abrir Todas no Fatiador ({item.models.length})</span>
+                <span>
+                  {plate3mfModel
+                    ? 'Abrir Mesa Completa no Fatiador'
+                    : `Abrir Todas no Fatiador (${Array.isArray(batchSlicerPaths) ? batchSlicerPaths.length : item.models.length})`}
+                </span>
               </button>
               {item.models.map((model, idx) => (
                 <button
@@ -244,14 +263,24 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
         </aside>
       </div>
 
-      <CatPinModal
-        isOpen={isCatpinOpen}
-        modelName={activeModel.name}
-        modelPath={activeModel.path}
-        objectFolderPath={item?.folderPath}
-        onClose={() => setIsCatpinOpen(false)}
-        onSavedParts={onRefreshLibrary}
-      />
+      <Suspense fallback={null}>
+        {isCatpinOpen && (
+          <CatPinModal
+            isOpen={isCatpinOpen}
+            modelName={activeModel.name}
+            modelPath={activeModel.path}
+            objectFolderPath={item?.folderPath}
+            printerName={settings.crealityPrinter || crealityCatalog.defaultPrinter}
+            catalogBedDimensions={crealityCatalog.bedDimensions}
+            slicerExecutablePath={activeSlicer ? activeSlicer.executablePath : 'system-default'}
+            onClose={() => setIsCatpinOpen(false)}
+            onSavedParts={() => {
+              pendingSelectPlateRef.current = true;
+              onRefreshLibrary?.();
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

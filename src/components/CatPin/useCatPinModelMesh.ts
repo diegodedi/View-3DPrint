@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { createGrayMatcapMaterial } from '../../utils/matcapUtils';
+import { computeCreasedNormalsInPlace } from '../../utils/normalSmoother';
+import { subscribeGlobalShading } from '../../utils/studioResinMaterial';
 import { disposeObjectGeometries, prepareObjectOnPlate } from '../../utils/threeHelpers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -52,7 +54,7 @@ export function useCatPinModelMesh({
     }
 
     const cloned = sourceGeometry.clone();
-    if (!cloned.attributes.normal) cloned.computeVertexNormals();
+    computeCreasedNormalsInPlace(cloned);
     const mesh = new THREE.Mesh(cloned, createGrayMatcapMaterial());
 
     if (!rootTransformRef.current) {
@@ -84,9 +86,13 @@ export function useCatPinModelMesh({
   useEffect(() => {
     const mainMesh = mainMeshRef.current;
     if (!mainMesh) return;
-    // Padrão CatPin Oficial (Imagens 1 e 2): O modelo 3D principal permanece SEMPRE 100%
-    // sólido e opaco com cinza estúdio, preservando anatomia, relevo e contraste.
     mainMesh.material = createGrayMatcapMaterial();
     renderScene();
   }, [hasResult, mainMeshRef, renderScene]);
+
+  useEffect(() => {
+    return subscribeGlobalShading(() => {
+      renderSceneRef.current();
+    });
+  }, []);
 }

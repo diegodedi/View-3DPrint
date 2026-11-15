@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { createZipBuffer } = require('./zipWriter.cjs');
+const { createZipBuffer, createZipBufferAsync } = require('./zipWriter.cjs');
 const { buildCrealityProjectConfigs } = require('./crealityPresets.cjs');
 
 function escapeXml(str) {
@@ -71,35 +71,44 @@ function buildModelRelsXml() {
 }
 
 function buildObjectMeshXml(vertices, indices) {
-  const vLines = [];
-  for (let i = 0; i < vertices.length; i += 3) {
-    vLines.push(
-      `     <vertex x="${vertices[i].toFixed(5)}" y="${vertices[i + 1].toFixed(5)}" z="${vertices[i + 2].toFixed(5)}"/>`
-    );
+  const CHUNK_STRIDE = 4096 * 3;
+  const vChunks = [];
+  for (let start = 0; start < vertices.length; start += CHUNK_STRIDE) {
+    const end = Math.min(start + CHUNK_STRIDE, vertices.length);
+    let block = '';
+    for (let i = start; i < end; i += 3) {
+      block += `     <vertex x="${vertices[i].toFixed(5)}" y="${vertices[i + 1].toFixed(5)}" z="${vertices[i + 2].toFixed(5)}"/>\n`;
+    }
+    vChunks.push(block);
   }
-  const tLines = [];
-  for (let i = 0; i < indices.length; i += 3) {
-    tLines.push(`     <triangle v1="${indices[i]}" v2="${indices[i + 1]}" v3="${indices[i + 2]}"/>`);
+  const tChunks = [];
+  for (let start = 0; start < indices.length; start += CHUNK_STRIDE) {
+    const end = Math.min(start + CHUNK_STRIDE, indices.length);
+    let block = '';
+    for (let i = start; i < end; i += 3) {
+      block += `     <triangle v1="${indices[i]}" v2="${indices[i + 1]}" v3="${indices[i + 2]}"/>\n`;
+    }
+    tChunks.push(block);
   }
   return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">',
-    ' <metadata name="BambuStudio:3mfVersion">1</metadata>',
-    ' <resources>',
-    '  <object id="1" p:UUID="00020000-81cb-4c03-9d28-80fed5dfa1dc" type="model">',
-    '   <mesh>',
-    '    <vertices>',
-    vLines.join('\n'),
-    '    </vertices>',
-    '    <triangles>',
-    tLines.join('\n'),
-    '    </triangles>',
-    '   </mesh>',
-    '  </object>',
-    ' </resources>',
-    ' <build/>',
+    '<?xml version="1.0" encoding="UTF-8"?>\n',
+    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">\n',
+    ' <metadata name="BambuStudio:3mfVersion">1</metadata>\n',
+    ' <resources>\n',
+    '  <object id="1" p:UUID="00020000-81cb-4c03-9d28-80fed5dfa1dc" type="model">\n',
+    '   <mesh>\n',
+    '    <vertices>\n',
+    ...vChunks,
+    '    </vertices>\n',
+    '    <triangles>\n',
+    ...tChunks,
+    '    </triangles>\n',
+    '   </mesh>\n',
+    '  </object>\n',
+    ' </resources>\n',
+    ' <build/>\n',
     '</model>',
-  ].join('\n');
+  ].join('');
 }
 
 function buildSceneModelXml(options) {
@@ -190,11 +199,7 @@ function buildCrealityHeaderXmls() {
   return { crealityXml, sliceInfoXml };
 }
 
-/**
- * Generates a configured .3mf project file ready to open in Creality Print / OrcaSlicer / Bambu Studio.
- * @param {object} params
- */
-function generateConfigured3mfPackage(params) {
+function prepareConfigured3mfEntries(params) {
   const { tempDir, modelPath, meshPayload, sliceConfig, slicerExePath, printerName, filamentName } = params;
   const overrides = mapSliceConfigToCrealityKeys(sliceConfig);
   const { bedCenterX, bedCenterY, configs } = buildCrealityProjectConfigs({
@@ -237,11 +242,32 @@ function generateConfigured3mfPackage(params) {
     );
   }
 
-  fs.mkdirSync(tempDir, { recursive: true });
   const output3mfPath = path.join(tempDir, `${safeFileBase}_CrealityAuto.3mf`);
-  fs.writeFileSync(output3mfPath, createZipBuffer(zipEntries));
-  return { output3mfPath, hasFullProjectProfile: Boolean(configs) };
+  return { zipEntries, output3mfPath, hasFullProjectProfile: Boolean(configs) };
 }
 
-module.exports = { generateConfigured3mfPackage };
+/**
+ * Generates a configured .3mf project file ready to open in Creality Print / OrcaSlicer / Bambu Studio.
+ * @param {object} params
+ */
+function generateConfigured3mfPackage(params) {
+  const { zipEntries, output3mfPath, hasFullProjectProfile } = prepareConfigured3mfEntries(params);
+  fs.mkdirSync(params.tempDir, { recursive: true });
+  fs.writeFileSync(output3mfPath, createZipBuffer(zipEntries));
+  return { output3mfPath, hasFullProjectProfile };
+}
+
+/**
+ * Generates a configured .3mf project file asynchronously without blocking the main thread.
+ * @param {object} params
+ */
+async function generateConfigured3mfPackageAsync(params) {
+  const { zipEntries, output3mfPath, hasFullProjectProfile } = prepareConfigured3mfEntries(params);
+  await fs.promises.mkdir(params.tempDir, { recursive: true });
+  const zipBuffer = await createZipBufferAsync(zipEntries);
+  await fs.promises.writeFile(output3mfPath, zipBuffer);
+  return { output3mfPath, hasFullProjectProfile };
+}
+
+module.exports = { generateConfigured3mfPackage, generateConfigured3mfPackageAsync };
 

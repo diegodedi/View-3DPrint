@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
-const { createZipBuffer } = require('./zipWriter.cjs');
+const { createZipBuffer, createZipBufferAsync } = require('./zipWriter.cjs');
 const { openModelInSlicer } = require('./slicerService.cjs');
 
 function escapeXml(str) {
@@ -15,10 +15,11 @@ function escapeXml(str) {
 
 /**
  * Converte quaternion e translação em string de matriz de transformação 3MF (3x4 coluna-maior / 12 floats).
+ * Especificação 3MF Core: m00 m10 m20 m01 m11 m21 m02 m12 m22 tx ty tz
  */
-function build3mfTransformString(position, rotation) {
-  const [px, py, pz] = position || [0, 0, 0];
-  const [qx, qy, qz, qw] = rotation || [0, 0, 0, 1];
+function build3mfTransformString(part, bedCenter = { x: 110, y: 110 }) {
+  const [px, py, pz] = part?.position || [0, 0, 0];
+  const [qx, qy, qz, qw] = part?.rotation || [0, 0, 0, 1];
 
   const m00 = 1 - 2 * (qy * qy + qz * qz);
   const m01 = 2 * (qx * qy - qz * qw);
@@ -32,8 +33,11 @@ function build3mfTransformString(position, rotation) {
   const m21 = 2 * (qy * qz + qx * qw);
   const m22 = 1 - 2 * (qx * qx + qy * qy);
 
-  // 3MF transform: m00 m01 m02 m10 m11 m12 m20 m21 m22 x y z
-  return `${m00.toFixed(6)} ${m01.toFixed(6)} ${m02.toFixed(6)} ${m10.toFixed(6)} ${m11.toFixed(6)} ${m12.toFixed(6)} ${m20.toFixed(6)} ${m21.toFixed(6)} ${m22.toFixed(6)} ${px.toFixed(4)} ${py.toFixed(4)} ${pz.toFixed(4)}`;
+  const tx = bedCenter.x + px;
+  const ty = bedCenter.y + py;
+  const tz = pz;
+
+  return `${m00.toFixed(6)} ${m10.toFixed(6)} ${m20.toFixed(6)} ${m01.toFixed(6)} ${m11.toFixed(6)} ${m21.toFixed(6)} ${m02.toFixed(6)} ${m12.toFixed(6)} ${m22.toFixed(6)} ${tx.toFixed(4)} ${ty.toFixed(4)} ${tz.toFixed(4)}`;
 }
 
 function buildContentTypesXml() {
@@ -56,41 +60,60 @@ function buildRootRelsXml() {
 }
 
 /**
- * Constrói o modelo 3MF com múltiplos objetos e instâncias na mesa de impressão.
+ * Constrói o XML 3MF com múltiplos objetos independentes (type="model") e instâncias posicionadas na mesa.
  */
-function buildMultiPart3dModelXml(projectName, parts) {
+function buildMultiPart3dModelXml(projectName, parts, options = {}) {
+  const bedWidthMm = Number(options.bedWidthMm) > 0 ? Number(options.bedWidthMm) : 220;
+  const bedDepthMm = Number(options.bedDepthMm) > 0 ? Number(options.bedDepthMm) : 220;
+  const bedCenterX = bedWidthMm * 0.5;
+  const bedCenterY = bedDepthMm * 0.5;
+
   const dateStr = new Date().toISOString().slice(0, 10);
   const objectNodes = [];
   const buildItems = [];
+  const CHUNK_STRIDE = 4096 * 3;
 
   parts.forEach((part, idx) => {
     const objId = idx + 1;
-    const vLines = [];
-    const verts = part.vertices;
-    for (let i = 0; i < verts.length; i += 3) {
-      vLines.push(`     <vertex x="${verts[i].toFixed(4)}" y="${verts[i + 1].toFixed(4)}" z="${verts[i + 2].toFixed(4)}"/>`);
+    const verts = part.vertices || [];
+    const inds = part.indices || [];
+
+    const vChunks = [];
+    for (let start = 0; start < verts.length; start += CHUNK_STRIDE) {
+      const end = Math.min(start + CHUNK_STRIDE, verts.length);
+      let block = '';
+      for (let i = start; i < end; i += 3) {
+        block += `     <vertex x="${Number(verts[i]).toFixed(4)}" y="${Number(verts[i + 1]).toFixed(4)}" z="${Number(verts[i + 2]).toFixed(4)}"/>\n`;
+      }
+      vChunks.push(block);
     }
 
-    const tLines = [];
-    const inds = part.indices;
-    for (let i = 0; i < inds.length; i += 3) {
-      tLines.push(`     <triangle v1="${inds[i]}" v2="${inds[i + 1]}" v3="${inds[i + 2]}"/>`);
+    const tChunks = [];
+    for (let start = 0; start < inds.length; start += CHUNK_STRIDE) {
+      const end = Math.min(start + CHUNK_STRIDE, inds.length);
+      let block = '';
+      for (let i = start; i < end; i += 3) {
+        block += `     <triangle v1="${inds[i]}" v2="${inds[i + 1]}" v3="${inds[i + 2]}"/>\n`;
+      }
+      tChunks.push(block);
     }
 
-    objectNodes.push([
-      `  <object id="${objId}" type="model" name="${escapeXml(part.name)}">`,
-      '   <mesh>',
-      '    <vertices>',
-      vLines.join('\n'),
-      '    </vertices>',
-      '    <triangles>',
-      tLines.join('\n'),
-      '    </triangles>',
-      '   </mesh>',
-      '  </object>',
-    ].join('\n'));
+    objectNodes.push(
+      [
+        `  <object id="${objId}" type="model" name="${escapeXml(part.name || `Peca_${objId}`)}">\n`,
+        '   <mesh>\n',
+        '    <vertices>\n',
+        ...vChunks,
+        '    </vertices>\n',
+        '    <triangles>\n',
+        ...tChunks,
+        '    </triangles>\n',
+        '   </mesh>\n',
+        '  </object>',
+      ].join('')
+    );
 
-    const transformStr = build3mfTransformString(part.position, part.rotation);
+    const transformStr = build3mfTransformString(part, { x: bedCenterX, y: bedCenterY });
     buildItems.push(`  <item objectid="${objId}" transform="${transformStr}" printable="1"/>`);
   });
 
@@ -110,46 +133,65 @@ function buildMultiPart3dModelXml(projectName, parts) {
   ].join('\n');
 }
 
-/**
- * Gera o buffer binário de um pacote 3MF com múltiplas peças distribuídas na mesa.
- */
-function createMultiPart3mfBuffer(projectName, parts) {
-  const files = [
-    { name: '[Content_Types].xml', data: Buffer.from(buildContentTypesXml(), 'utf-8') },
-    { name: '_rels/.rels', data: Buffer.from(buildRootRelsXml(), 'utf-8') },
-    { name: '3D/3dmodel.model', data: Buffer.from(buildMultiPart3dModelXml(projectName, parts), 'utf-8') },
+function build3mfEntries(projectName, parts, options = {}) {
+  return [
+    { path: '[Content_Types].xml', content: buildContentTypesXml() },
+    { path: '_rels/.rels', content: buildRootRelsXml() },
+    { path: '3D/3dmodel.model', content: buildMultiPart3dModelXml(projectName, parts, options) },
   ];
-  return createZipBuffer(files);
 }
 
 /**
- * Salva o projeto multi-peças .3mf em disco.
+ * Gera o buffer binário de um pacote 3MF com múltiplas peças distribuídas na mesa.
  */
-function saveMultiPart3mfFile(filePath, projectName, parts) {
+function createMultiPart3mfBuffer(projectName, parts, options = {}) {
+  return createZipBuffer(build3mfEntries(projectName, parts, options));
+}
+
+/**
+ * Salva o projeto multi-peças .3mf em disco de forma síncrona.
+ */
+function saveMultiPart3mfFile(params) {
+  const { filePath, projectName, parts, options = {} } = params;
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const buf = createMultiPart3mfBuffer(projectName, parts);
+  const buf = createMultiPart3mfBuffer(projectName, parts, options);
   fs.writeFileSync(filePath, buf);
   return filePath;
 }
 
 /**
- * Salva em pasta temporária e abre no fatiador ativo.
+ * Salva o projeto multi-peças .3mf em disco de forma assíncrona (não bloqueia a UI).
  */
-async function openMultiPartProjectInSlicer(projectName, parts, slicerExecutablePath) {
+async function saveMultiPart3mfFileAsync(params) {
+  const { filePath, projectName, parts, options = {} } = params;
+  const dir = path.dirname(filePath);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const entries = build3mfEntries(projectName, parts, options);
+  const buf = await createZipBufferAsync(entries);
+  await fs.promises.writeFile(filePath, buf);
+  return filePath;
+}
+
+/**
+ * Salva em pasta temporária e abre no fatiador ativo como objetos independentes na mesa.
+ */
+async function openMultiPartProjectInSlicer(params) {
+  const { projectName, parts, slicerExecutablePath, options = {} } = params;
   const tempBase = app && typeof app.getPath === 'function'
     ? app.getPath('temp')
     : process.env.TEMP || process.env.TMP || '.';
   const tempDir = path.join(tempBase, 'view3dprint-multipart');
-  const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanBase = String(projectName || 'Projeto').replace(/\.[^/.]+$/, '');
+  const safeName = cleanBase.replace(/[^a-zA-Z0-9_-]/g, '_');
   const outPath = path.join(tempDir, `${safeName}_MesaCompleta.3mf`);
-  saveMultiPart3mfFile(outPath, projectName, parts);
+  await saveMultiPart3mfFileAsync({ filePath: outPath, projectName: cleanBase, parts, options });
   return openModelInSlicer(outPath, slicerExecutablePath);
 }
 
 module.exports = {
   createMultiPart3mfBuffer,
   saveMultiPart3mfFile,
+  saveMultiPart3mfFileAsync,
   openMultiPartProjectInSlicer,
 };
-

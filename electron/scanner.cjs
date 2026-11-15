@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { scanLibraryFolderAsync } = require('./scannerAsync.cjs');
 
 const MODEL_EXTENSIONS = new Set(['.stl', '.obj', '.3mf']);
 const TEXT_EXTENSIONS = new Set(['.txt', '.md']);
+const IGNORED_DIRS = new Set(['node_modules', 'dist', 'build', '__MACOSX', '$RECYCLE.BIN', 'System Volume Information']);
 const META_FILE_NAME = '.view3dprint.json';
 const THUMB_FILE_NAME = '.view3dprint-matcap-v2.jpg';
 
@@ -168,7 +170,7 @@ function scanLibraryFolder(rootPath, maxDepth = 5) {
     }
 
     for (const sub of subEntries) {
-      if (sub.isDirectory() && !sub.name.startsWith('.') && sub.name !== 'node_modules') {
+      if (sub.isDirectory() && !sub.name.startsWith('.') && !IGNORED_DIRS.has(sub.name)) {
         walk(path.join(currentDir, sub.name), depth + 1);
       }
     }
@@ -178,4 +180,4 @@ function scanLibraryFolder(rootPath, maxDepth = 5) {
   return results.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
-module.exports = { scanLibraryFolder, saveFolderMetadata };
+module.exports = { scanLibraryFolder, scanLibraryFolderAsync, saveFolderMetadata };

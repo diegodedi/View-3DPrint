@@ -3,7 +3,18 @@ import * as THREE from 'three';
 import type { CatPinPart } from '../../types/catpinMultiParts';
 import type { CatpinCutResult } from '../../types/models';
 import type { PlateArrangementResult } from '../../types/plateTypes';
+import { createPartStudioMaterial } from '../../utils/studioResinMaterial';
 import { disposeObjectGeometries } from '../../utils/threeHelpers';
+
+function disposeGroupMaterials(group: THREE.Group): void {
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh && mesh.material) {
+      if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+      else mesh.material.dispose();
+    }
+  });
+}
 
 interface UseCatPinResultMeshParams {
   sceneRef: React.MutableRefObject<THREE.Scene | null>;
@@ -51,6 +62,7 @@ export function useCatPinResultMesh({
     if (!scene.children.includes(resultGroupRef.current)) {
       scene.add(resultGroupRef.current);
     }
+    disposeGroupMaterials(resultGroupRef.current);
     disposeObjectGeometries(resultGroupRef.current);
     resultGroupRef.current.clear();
     explodedMeshesRef.current.clear();
@@ -71,16 +83,13 @@ export function useCatPinResultMesh({
         grid.position.set(plateArrangement.bedCenterX, plateArrangement.bedCenterY, -0.1);
         plateGroup.add(grid);
 
-        parts.forEach((part) => {
+        parts.forEach((part, idx) => {
           if (!part.visible) return;
           const placement = plateArrangement.placements.get(part.id);
           const isSelected = part.id === selectedPartId;
-          const mat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(part.color),
-            roughness: 0.35,
-            metalness: 0.08,
-            side: THREE.DoubleSide,
-            emissive: isSelected ? new THREE.Color(part.color).multiplyScalar(0.22) : new THREE.Color(0x000000),
+          const mat = createPartStudioMaterial(part.color, {
+            isPrimaryPart: idx === 0,
+            isSelected,
           });
 
           const mesh = new THREE.Mesh(part.geometry, mat);
@@ -129,12 +138,9 @@ export function useCatPinResultMesh({
       parts.forEach((part, idx) => {
         if (!part.visible) return;
         const isSelected = part.id === selectedPartId;
-        const mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(part.color),
-          roughness: 0.35,
-          metalness: 0.08,
-          side: THREE.DoubleSide,
-          emissive: isSelected ? new THREE.Color(part.color).multiplyScalar(0.22) : new THREE.Color(0x000000),
+        const mat = createPartStudioMaterial(part.color, {
+          isPrimaryPart: idx === 0,
+          isSelected,
         });
 
         const mesh = new THREE.Mesh(part.geometry, mat);
@@ -170,15 +176,11 @@ export function useCatPinResultMesh({
 
       mainMesh.updateMatrixWorld(true);
 
-      parts.forEach((part) => {
+      parts.forEach((part, idx) => {
         if (part.id === selectedPartId || !part.visible) return;
-        const ghostMat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(part.color),
-          roughness: 0.5,
-          metalness: 0.0,
-          transparent: true,
+        const ghostMat = createPartStudioMaterial(part.color, {
+          isPrimaryPart: idx === 0,
           opacity: 0.25,
-          side: THREE.DoubleSide,
         });
 
         const ghostMesh = new THREE.Mesh(part.geometry, ghostMat);

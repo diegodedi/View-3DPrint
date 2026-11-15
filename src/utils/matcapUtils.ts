@@ -1,11 +1,10 @@
 import * as THREE from 'three';
+import { createStudioResinMaterial } from './studioResinMaterial';
 
 let cachedGrayMatcap: THREE.CanvasTexture | null = null;
-let sharedMatcapMaterial: THREE.MeshMatcapMaterial | null = null;
 
 /**
- * Generates a high-definition studio clay/resin gray MatCap sphere texture with built-in
- * cavity/contact occlusion falloff procedurally on a 512x512 canvas (Blender Workbench style).
+ * Generates a high-definition studio clay/resin gray MatCap sphere texture on a 512x512 canvas.
  */
 export function getGrayMatcapTexture(): THREE.CanvasTexture {
   if (cachedGrayMatcap) return cachedGrayMatcap;
@@ -37,20 +36,13 @@ export function getGrayMatcapTexture(): THREE.CanvasTexture {
         }
 
         const nz = Math.sqrt(Math.max(0, 1.0 - r2));
-
-        // Luz principal direcional do topo-esquerda-frente
         const keyLight = Math.max(0, nx * -0.38 + ny * 0.60 + nz * 0.70);
-        // Luz de preenchimento suave da base-direita
         const fillLight = Math.max(0, nx * 0.38 + ny * -0.32 + nz * 0.45) * 0.24;
-        // Brilho especular sutil de resina/clay
-        const spec = Math.pow(Math.max(0, nx * -0.22 + ny * 0.52 + nz * 0.82), 22) * 0.26;
-        // Realce de aro / silhueta (Fresnel rim)
-        const rim = Math.pow(1.0 - nz, 2.6) * 0.18;
-        // Curva de oclusão de cavidade (Workbench Cavity): aprofunda suavemente em fendas e ângulos rasantes
-        const cavity = Math.pow(nz, 0.42) * 0.38 + 0.62;
+        const spec = Math.pow(Math.max(0, nx * -0.22 + ny * 0.52 + nz * 0.82), 22) * 0.14;
+        const cavity = Math.pow(nz, 0.38) * 0.32 + 0.68;
 
-        const baseAmbient = 0.32;
-        const intensity = Math.min(1.0, Math.max(0.0, (baseAmbient + keyLight * 0.56 + fillLight + spec + rim) * cavity));
+        const baseAmbient = 0.38;
+        const intensity = Math.min(1.0, Math.max(0.0, (baseAmbient + keyLight * 0.52 + fillLight + spec) * cavity));
         const grayValue = Math.round(intensity * 242);
 
         const idx = (y * size + x) * 4;
@@ -70,16 +62,11 @@ export function getGrayMatcapTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Retorna o material MatCap Cinza canônico (Blender Workbench Clay)
- * utilizado com blindagem pelo CatPin e pelo visualizador 3D em modo matcap.
+ * Retorna o material global unificado (MatCap + Cavity + Roughness Difuso + Baixa Specular)
+ * padronizado para todas as abas e views do aplicativo (padrão Cinza Studio).
  */
-export function createGrayMatcapMaterial(): THREE.MeshMatcapMaterial {
-  if (!sharedMatcapMaterial) {
-    sharedMatcapMaterial = new THREE.MeshMatcapMaterial({
-      matcap: getGrayMatcapTexture(),
-    });
-  }
-  return sharedMatcapMaterial;
+export function createGrayMatcapMaterial(): THREE.Material {
+  return createStudioResinMaterial();
 }
 
 export { clearThumbnailQueue, enqueueThumbnailJob } from './thumbnailQueue';

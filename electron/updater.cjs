@@ -10,11 +10,10 @@ function initAutoUpdater(mainWindow) {
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
-    console.log('[AutoUpdater] Verificando atualizações no GitHub...');
+    // Evento de verificação iniciado silenciosamente
   });
 
   autoUpdater.on('update-available', (info) => {
-    console.log('[AutoUpdater] Nova versão encontrada:', info.version);
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
 
     let notes = '';
@@ -59,7 +58,6 @@ function initAutoUpdater(mainWindow) {
   });
 
   autoUpdater.on('update-not-available', () => {
-    console.log('[AutoUpdater] Aplicativo já está na versão mais recente.');
     if (isManualCheck) {
       const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
       dialog.showMessageBox(win, {

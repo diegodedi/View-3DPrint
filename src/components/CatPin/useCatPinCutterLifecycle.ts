@@ -22,6 +22,7 @@ interface UseCatPinCutterLifecycleParams {
   sourceGeometry?: THREE.BufferGeometry;
   detailDepthMm: number;
   detailTaperPct?: number;
+  maskOpacityPct?: number;
   cutPoints: CutPoint3D2D[];
   polylineFlipSide: boolean;
   result: CatpinCutResult | null;
@@ -45,6 +46,7 @@ export function useCatPinCutterLifecycle({
   sourceGeometry,
   detailDepthMm,
   detailTaperPct = 0,
+  maskOpacityPct = 65,
   cutPoints,
   polylineFlipSide,
   result,
@@ -95,6 +97,9 @@ export function useCatPinCutterLifecycle({
     }
 
     if (cutter) {
+      if (cutter.material instanceof THREE.MeshBasicMaterial) {
+        cutter.material.opacity = THREE.MathUtils.clamp(maskOpacityPct / 100, 0, 0.9);
+      }
       cutter.visible = !result;
       scene.add(cutter);
       cutterMeshRef.current = cutter;
@@ -104,5 +109,14 @@ export function useCatPinCutterLifecycle({
     renderScene();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolMode, sourceGeometry, detailDepthMm, detailTaperPct, worldPtsSig, polylineFlipSide, result, sceneRef, cameraRef, renderScene]);
+
+  useEffect(() => {
+    const cutter = cutterMeshRef.current;
+    if (!cutter) return;
+    if (cutter.material instanceof THREE.MeshBasicMaterial) {
+      cutter.material.opacity = THREE.MathUtils.clamp(maskOpacityPct / 100, 0, 0.9);
+      renderScene();
+    }
+  }, [maskOpacityPct, cutterMeshRef, renderScene]);
 }
 

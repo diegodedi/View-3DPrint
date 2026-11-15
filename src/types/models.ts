@@ -26,12 +26,23 @@ export interface SlicerProfile {
   executablePath: string;
 }
 
+export type ViewportShadingPresetKey = 'clay' | 'jade' | 'knight' | 'ochre' | 'wax';
+
+export interface ViewportShadingConfig {
+  preset: ViewportShadingPresetKey;
+  cavityDistance: number;
+  cavityIntensity: number;
+  roughness: number;
+  specularIntensity: number;
+}
+
 export interface AppSettings {
   libraryPath: string;
   slicers: SlicerProfile[];
   activeSlicerId: string;
   crealityPrinter?: string;
   crealityFilament?: string;
+  viewportShading?: ViewportShadingConfig;
 }
 
 export interface BoundingBoxDimensions {
@@ -89,6 +100,15 @@ export interface CrealityCatalog {
   filaments: string[];
   defaultPrinter: string;
   defaultFilament: string;
+  bedDimensions?: { widthMm: number; depthMm: number; heightMm: number };
+}
+
+export interface MultiPart3mfItemPayload {
+  name: string;
+  vertices: number[];
+  indices: number[];
+  position: [number, number, number];
+  rotation: [number, number, number, number];
 }
 
 export interface OpenConfiguredSlicerPayload {
@@ -212,7 +232,11 @@ export interface CatpinDiagnosticResult {
 }
 
 export interface ElectronBridgeAPI {
-  getInitialState: () => Promise<{ settings: AppSettings; items: PrintObjectItem[] }>;
+  getInitialState: () => Promise<{
+    settings: AppSettings;
+    items: PrintObjectItem[];
+    crealityCatalog?: CrealityCatalog;
+  }>;
   selectLibraryFolder: () => Promise<{ settings: AppSettings; items: PrintObjectItem[] } | null>;
   rescanLibrary: (folderPath?: string) => Promise<{ settings: AppSettings; items: PrintObjectItem[] }>;
   readModelBuffer: (filePath: string) => Promise<ArrayBuffer>;
@@ -246,25 +270,18 @@ export interface ElectronBridgeAPI {
   }) => Promise<{ success: boolean; savedPaths: string[]; folder: string }>;
   saveMultiPart3mf: (payload: {
     projectName: string;
-    parts: Array<{
-      name: string;
-      vertices: number[];
-      indices: number[];
-      position: [number, number, number];
-      rotation: [number, number, number, number];
-    }>;
+    parts: MultiPart3mfItemPayload[];
+    targetFolder?: string;
     defaultPath?: string;
-  }) => Promise<{ success: boolean; savedPath: string }>;
+    bedWidthMm?: number;
+    bedDepthMm?: number;
+  }) => Promise<{ success: boolean; savedPath: string; folder?: string }>;
   openMultiPartInSlicer: (payload: {
     projectName: string;
-    parts: Array<{
-      name: string;
-      vertices: number[];
-      indices: number[];
-      position: [number, number, number];
-      rotation: [number, number, number, number];
-    }>;
+    parts: MultiPart3mfItemPayload[];
     slicerExecutablePath?: string;
+    bedWidthMm?: number;
+    bedDepthMm?: number;
   }) => Promise<{ mode: string; path: string }>;
   checkForUpdates?: () => Promise<boolean>;
 }

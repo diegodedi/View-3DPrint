@@ -3,9 +3,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { BoundingBoxDimensions } from '../types/models';
 import { disposeObjectGeometries } from '../utils/threeHelpers';
-import { createGrayMatcapMaterial } from '../utils/matcapUtils';
 import {
   createStudioResinMaterial,
+  subscribeGlobalShading,
   type ResinPresetKey,
 } from '../utils/studioResinMaterial';
 
@@ -22,12 +22,19 @@ export function useViewer3DScene() {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const meshGroupRef = useRef<THREE.Group | null>(null);
+  const wireMaterialRef = useRef<THREE.MeshBasicMaterial | null>(null);
 
   const renderSceneOnce = useCallback(() => {
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    return subscribeGlobalShading(() => {
+      renderSceneOnce();
+    });
+  }, [renderSceneOnce]);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -44,7 +51,7 @@ export function useViewer3DScene() {
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
       powerPreference: 'high-performance',
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -85,19 +92,22 @@ export function useViewer3DScene() {
       if (meshGroupRef.current) {
         disposeObjectGeometries(meshGroupRef.current);
       }
+      wireMaterialRef.current?.dispose();
+      wireMaterialRef.current = null;
       renderer.dispose();
     };
   }, [renderSceneOnce]);
 
   const applyMaterialToMesh = useCallback(
-    (mode: ShadingMode, wire: boolean) => {
+    (wire: boolean) => {
       if (!meshGroupRef.current) return;
-      const wireMat = new THREE.MeshBasicMaterial({ color: 0xb0b0b8, wireframe: true });
-      const targetMat =
-        mode === 'matcap' ? createGrayMatcapMaterial() : createStudioResinMaterial(mode);
+      if (wire && !wireMaterialRef.current) {
+        wireMaterialRef.current = new THREE.MeshBasicMaterial({ color: 0xb0b0b8, wireframe: true });
+      }
+      const targetMat = wire ? wireMaterialRef.current! : createStudioResinMaterial();
       meshGroupRef.current.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
-          (child as THREE.Mesh).material = wire ? wireMat : targetMat;
+          (child as THREE.Mesh).material = targetMat;
         }
       });
       renderSceneOnce();
@@ -136,4 +146,3 @@ export function useViewer3DScene() {
     captureSnapshot,
   };
 }
-

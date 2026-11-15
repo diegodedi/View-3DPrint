@@ -2,14 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Play, Layers, Cuboid, FolderOpen } from 'lucide-react';
 import type { PrintObjectItem } from '../types/models';
 import { formatFileSize } from '../utils/formatters';
-import { renderBufferToThumbnailDataUrl } from '../utils/threeHelpers';
+import { renderBufferToThumbnailDataUrlAsync } from '../utils/thumbnailRenderer';
 import { enqueueThumbnailJob } from '../utils/thumbnailQueue';
 
 interface ObjectCardProps {
   item: PrintObjectItem;
-  onSelect: () => void;
+  onSelect: (id: string) => void;
   onQuickSlice: (modelPath: string) => void;
   onAutoThumbnailGenerated: (folderPath: string, dataUrl: string) => void;
+}
+
+function buildLocalAssetUrl(thumbnailPath: string, version: number): string {
+  return `local-asset://thumb?path=${encodeURIComponent(thumbnailPath)}&v=${version}`;
 }
 
 /**
@@ -23,9 +27,18 @@ const ObjectCardComponent: React.FC<ObjectCardProps> = ({
 }) => {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isVisible, setIsVisible] = useState<boolean>(false);
-  const [thumbDataUrl, setThumbDataUrl] = useState<string | null>(null);
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const primaryModel = item.models[0];
+
+  const thumbSrc = item.thumbnailPath
+    ? (fallbackUrl || buildLocalAssetUrl(item.thumbnailPath, item.updatedAt))
+    : generatedUrl;
+
+  useEffect(() => {
+    setFallbackUrl(null);
+  }, [item.thumbnailPath, item.updatedAt]);
 
   useEffect(() => {
     const el = cardRef.current;
@@ -44,74 +57,68 @@ const ObjectCardComponent: React.FC<ObjectCardProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible || item.thumbnailPath || !primaryModel || !window.electronAPI) return;
     let active = true;
 
-    async function loadOrGenerateThumb() {
-      if (!window.electronAPI) return;
-
-      if (item.thumbnailPath) {
-        if (!thumbDataUrl) {
-          const existingUrl = await window.electronAPI.readImageDataUrl(item.thumbnailPath);
-          if (active && existingUrl) {
-            setThumbDataUrl(existingUrl);
-          }
-        }
-        return;
-      }
-
-      if (!primaryModel) return;
+    async function generateThumb() {
       try {
         setIsGenerating(true);
-        const generatedUrl = await enqueueThumbnailJob(async () => {
+        const dataUrl = await enqueueThumbnailJob(async () => {
           if (!active || !window.electronAPI) return '';
           const buffer = await window.electronAPI.readModelBuffer(primaryModel.path);
           if (!active) return '';
-          return renderBufferToThumbnailDataUrl(buffer, primaryModel.extension);
+          return renderBufferToThumbnailDataUrlAsync(buffer, primaryModel.extension);
         });
 
-        if (active && generatedUrl) {
-          setThumbDataUrl(generatedUrl);
-          onAutoThumbnailGenerated(item.folderPath, generatedUrl);
+        if (active && dataUrl) {
+          setGeneratedUrl(dataUrl);
+          onAutoThumbnailGenerated(item.folderPath, dataUrl);
         }
       } catch {
-        if (active) setThumbDataUrl(null);
+        if (active) setGeneratedUrl(null);
       } finally {
         if (active) setIsGenerating(false);
       }
     }
 
-    loadOrGenerateThumb();
+    generateThumb();
     return () => {
       active = false;
     };
   }, [isVisible, item.thumbnailPath, item.folderPath, primaryModel, onAutoThumbnailGenerated]);
 
+  const handleImgError = async () => {
+    if (!item.thumbnailPath || fallbackUrl || !window.electronAPI) return;
+    const dataUrl = await window.electronAPI.readImageDataUrl(item.thumbnailPath);
+    if (dataUrl) setFallbackUrl(dataUrl);
+  };
+
   return (
     <article
       ref={cardRef}
       className="maker-card"
-      onClick={onSelect}
+      onClick={() => onSelect(item.id)}
       role="button"
       tabIndex={0}
       aria-label={`Inspecionar objeto 3D ${item.name}`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onSelect();
+          onSelect(item.id);
         }
       }}
     >
       <div className="maker-thumb-box">
-        {thumbDataUrl ? (
+        {thumbSrc ? (
           <img
-            src={thumbDataUrl}
+            src={thumbSrc}
             alt={`Visualização 3D de ${item.name}`}
             className="maker-thumb-img"
             loading="lazy"
             decoding="async"
             width={280}
             height={185}
+            onError={handleImgError}
           />
         ) : (
           <div className="maker-thumb-empty">

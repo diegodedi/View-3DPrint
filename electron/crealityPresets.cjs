@@ -57,24 +57,37 @@ function mergeInheritedProfile(subDir, nameOrFile, visited = new Set()) {
   return { ...parent, ...data };
 }
 
-function computeBedCenter(printableArea) {
-  const coords = Array.isArray(printableArea) ? printableArea : [];
-  let maxX = 220;
-  let maxY = 220;
-  for (const pt of coords) {
-    const [xStr, yStr] = String(pt).split('x');
-    const x = parseFloat(xStr);
-    const y = parseFloat(yStr);
-    if (Number.isFinite(x) && x > maxX) maxX = x;
-    if (Number.isFinite(y) && y > maxY) maxY = y;
-    if (Number.isFinite(x) && x > 0 && maxX === 220) maxX = x;
-    if (Number.isFinite(y) && y > 0 && maxY === 220) maxY = y;
+function inferDimensionsFromName(printerName) {
+  const n = String(printerName || '').toLowerCase();
+  if (n.includes('k2 plus')) return { widthMm: 350, depthMm: 350, heightMm: 350 };
+  if (n.includes('k1 max') || n.includes('v3 plus') || n.includes('s1 plus') || n.includes('cr-10')) {
+    return { widthMm: 300, depthMm: 300, heightMm: 300 };
   }
-  const xs = coords.map((p) => parseFloat(String(p).split('x')[0])).filter(Number.isFinite);
-  const ys = coords.map((p) => parseFloat(String(p).split('x')[1])).filter(Number.isFinite);
-  const width = xs.length > 0 ? Math.max(...xs) : maxX;
-  const depth = ys.length > 0 ? Math.max(...ys) : maxY;
-  return { bedCenterX: Math.round(width / 2), bedCenterY: Math.round(depth / 2) };
+  if (n.includes('ender-5 plus')) return { widthMm: 350, depthMm: 350, heightMm: 400 };
+  if (n.includes('a1 mini')) return { widthMm: 180, depthMm: 180, heightMm: 180 };
+  if (n.includes('bambu') || n.includes('x1') || n.includes('p1')) {
+    return { widthMm: 256, depthMm: 256, heightMm: 256 };
+  }
+  return { widthMm: 220, depthMm: 220, heightMm: 250 };
+}
+
+function extractBedDimensions(printableArea, printableHeight, printerName) {
+  const fallback = inferDimensionsFromName(printerName);
+  const rawCoords = typeof printableArea === 'string'
+    ? printableArea.split(',').map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(printableArea) ? printableArea : [];
+  const xs = rawCoords.map((p) => parseFloat(String(p).split('x')[0])).filter(Number.isFinite);
+  const ys = rawCoords.map((p) => parseFloat(String(p).split('x')[1])).filter(Number.isFinite);
+  const widthMm = xs.length > 0 ? Math.max(...xs) : fallback.widthMm;
+  const depthMm = ys.length > 0 ? Math.max(...ys) : fallback.depthMm;
+  const parsedH = parseFloat(Array.isArray(printableHeight) ? printableHeight[0] : printableHeight);
+  const heightMm = Number.isFinite(parsedH) && parsedH > 0 ? parsedH : fallback.heightMm;
+  return { widthMm: Math.round(widthMm), depthMm: Math.round(depthMm), heightMm: Math.round(heightMm) };
+}
+
+function computeBedCenter(printableArea, printerName) {
+  const { widthMm, depthMm } = extractBedDimensions(printableArea, null, printerName);
+  return { bedCenterX: Math.round(widthMm / 2), bedCenterY: Math.round(depthMm / 2) };
 }
 
 function normalizeMachineMap(raw, printerName) {
@@ -144,7 +157,13 @@ function normalizeProcessMap(raw, printerName, overrides) {
 function listCrealityCatalog(slicerExePath, selectedPrinter) {
   const root = resolveProfilesRoot(slicerExePath);
   if (!root) {
-    return { printers: [], filaments: [], defaultPrinter: 'keep-current', defaultFilament: '' };
+    return {
+      printers: [],
+      filaments: [],
+      defaultPrinter: 'keep-current',
+      defaultFilament: '',
+      bedDimensions: inferDimensionsFromName(selectedPrinter),
+    };
   }
 
   const machineDir = path.join(root, 'machine');
@@ -177,7 +196,16 @@ function listCrealityCatalog(slicerExePath, selectedPrinter) {
     filaments[0] ||
     '';
 
-  return { printers, filaments, defaultPrinter: preferred, defaultFilament };
+  const machineRaw = preferred && preferred !== 'keep-current'
+    ? mergeInheritedProfile(machineDir, preferred)
+    : {};
+  const bedDimensions = extractBedDimensions(
+    machineRaw.printable_area,
+    machineRaw.printable_height,
+    preferred
+  );
+
+  return { printers, filaments, defaultPrinter: preferred, defaultFilament, bedDimensions };
 }
 
 function findMatchingProcessFile(processDir, printerName, layerHeightStr) {

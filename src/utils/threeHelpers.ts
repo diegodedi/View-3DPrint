@@ -4,6 +4,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import type { BoundingBoxDimensions } from '../types/models';
 import { createGrayMatcapMaterial } from './matcapUtils';
+import { computeCreasedNormalsInPlace } from './normalSmoother';
 
 let sharedThumbRenderer: THREE.WebGLRenderer | null = null;
 let sharedThumbScene: THREE.Scene | null = null;
@@ -19,8 +20,8 @@ export function applyGrayMatcapToObject(object3d: THREE.Object3D): void {
   object3d.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      if (mesh.geometry && !mesh.geometry.attributes.normal) {
-        mesh.geometry.computeVertexNormals();
+      if (mesh.geometry) {
+        computeCreasedNormalsInPlace(mesh.geometry);
       }
       mesh.material = mat;
     }
@@ -67,9 +68,7 @@ export function parseModelBufferToMesh(buffer: ArrayBuffer | Uint8Array, extensi
   if (ext === 'STL') {
     const loader = new STLLoader();
     const geometry = loader.parse(safeBuffer);
-    if (!geometry.attributes.normal) {
-      geometry.computeVertexNormals();
-    }
+    computeCreasedNormalsInPlace(geometry);
     return new THREE.Mesh(geometry, createGrayMatcapMaterial());
   }
 

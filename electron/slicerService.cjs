@@ -3,7 +3,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { app, shell } = require('electron');
 const { listCrealityCatalog } = require('./crealityPresets.cjs');
-const { generateConfigured3mfPackage } = require('./creality3mfBuilder.cjs');
+const { generateConfigured3mfPackageAsync } = require('./creality3mfBuilder.cjs');
+
+let cachedDetectedSlicers = null;
+let cachedCrealityInstallations = null;
+const cachedCrealityCatalogs = new Map();
+let cachedLoadedSettings = null;
 
 const STATIC_SLICERS = [
   {
@@ -49,6 +54,7 @@ function getConfigPath() {
 }
 
 function scanCrealityInstallations() {
+  if (cachedCrealityInstallations) return cachedCrealityInstallations;
   const roots = [
     'C:\\Program Files\\Creality',
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Creality'),
@@ -79,6 +85,7 @@ function scanCrealityInstallations() {
   if (found.length === 0 && fs.existsSync(legacyExe)) {
     found.push({ id: 'creality-print', name: 'Creality Print', executablePath: legacyExe });
   }
+  cachedCrealityInstallations = found;
   return found;
 }
 
@@ -87,6 +94,7 @@ function scanCrealityInstallations() {
  * @returns {Array<{id: string, name: string, executablePath: string}>}
  */
 function detectInstalledSlicers() {
+  if (cachedDetectedSlicers) return cachedDetectedSlicers;
   const detected = [...scanCrealityInstallations()];
   for (const slicer of STATIC_SLICERS) {
     const foundPath = slicer.candidates.find((c) => c && fs.existsSync(c));
@@ -94,7 +102,18 @@ function detectInstalledSlicers() {
       detected.push({ id: slicer.id, name: slicer.name, executablePath: foundPath });
     }
   }
+  cachedDetectedSlicers = detected;
   return detected;
+}
+
+function getCachedCrealityCatalog(slicerExePath, selectedPrinter) {
+  const key = `${slicerExePath || ''}::${selectedPrinter || ''}`;
+  if (cachedCrealityCatalogs.has(key)) {
+    return cachedCrealityCatalogs.get(key);
+  }
+  const catalog = listCrealityCatalog(slicerExePath, selectedPrinter);
+  cachedCrealityCatalogs.set(key, catalog);
+  return catalog;
 }
 
 function mergeSlicerLists(detected, savedList) {
@@ -118,10 +137,11 @@ function mergeSlicerLists(detected, savedList) {
  * @param {string} defaultSampleLibrary
  */
 function loadAppSettings(defaultSampleLibrary) {
+  if (cachedLoadedSettings) return cachedLoadedSettings;
   const configPath = getConfigPath();
   const detected = detectInstalledSlicers();
   const topCreality = detected.find((s) => s.id.startsWith('creality'));
-  const initialCatalog = listCrealityCatalog(topCreality?.executablePath || null);
+  const initialCatalog = getCachedCrealityCatalog(topCreality?.executablePath || null);
 
   const defaultConfig = {
     libraryPath: defaultSampleLibrary,
@@ -131,7 +151,10 @@ function loadAppSettings(defaultSampleLibrary) {
     crealityFilament: initialCatalog.defaultFilament,
   };
 
-  if (!fs.existsSync(configPath)) return defaultConfig;
+  if (!fs.existsSync(configPath)) {
+    cachedLoadedSettings = defaultConfig;
+    return defaultConfig;
+  }
 
   try {
     const saved = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -146,14 +169,16 @@ function loadAppSettings(defaultSampleLibrary) {
           ? saved.activeSlicerId
           : mergedSlicers[0]?.id || 'system-default';
 
-    return {
+    cachedLoadedSettings = {
       libraryPath: saved.libraryPath || defaultSampleLibrary,
       slicers: mergedSlicers,
       activeSlicerId: activeId,
       crealityPrinter: saved.crealityPrinter || initialCatalog.defaultPrinter,
       crealityFilament: saved.crealityFilament || initialCatalog.defaultFilament,
     };
+    return cachedLoadedSettings;
   } catch {
+    cachedLoadedSettings = defaultConfig;
     return defaultConfig;
   }
 }
@@ -164,8 +189,9 @@ function loadAppSettings(defaultSampleLibrary) {
  * @param {string} defaultSampleLibrary
  */
 function saveAppSettings(newSettings, defaultSampleLibrary) {
-  const current = loadAppSettings(defaultSampleLibrary);
+  const current = cachedLoadedSettings || loadAppSettings(defaultSampleLibrary);
   const updated = { ...current, ...newSettings };
+  cachedLoadedSettings = updated;
   fs.writeFileSync(getConfigPath(), JSON.stringify(updated, null, 2), 'utf-8');
   return updated;
 }
@@ -210,7 +236,7 @@ async function openConfiguredModelInSlicer(payload) {
     ? app.getPath('temp')
     : process.env.TEMP || process.env.TMP || '.';
   const tempDir = path.join(tempBase, 'view3dprint-creality');
-  const { output3mfPath, hasFullProjectProfile } = generateConfigured3mfPackage({
+  const { output3mfPath, hasFullProjectProfile } = await generateConfigured3mfPackageAsync({
     tempDir,
     modelPath,
     meshPayload,
@@ -235,7 +261,7 @@ function getCrealityCatalogForSlicer(slicerExecutablePath, selectedPrinter) {
     slicerExecutablePath && /creality/i.test(slicerExecutablePath)
       ? slicerExecutablePath
       : detectedCreality;
-  return listCrealityCatalog(effectiveExe, selectedPrinter);
+  return getCachedCrealityCatalog(effectiveExe, selectedPrinter);
 }
 
 module.exports = {

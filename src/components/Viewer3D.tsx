@@ -1,22 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import type * as THREE from 'three';
-import { Camera, RotateCcw, Grid, Scissors, Palette } from 'lucide-react';
+import { Camera, RotateCcw, Grid, Scissors } from 'lucide-react';
 import type { BoundingBoxDimensions, ModelFileEntry } from '../types/models';
 import {
   disposeObjectGeometries,
-  parseModelBufferToMesh,
   prepareObjectOnPlate,
 } from '../utils/threeHelpers';
+import { parseModelBufferAsync } from '../utils/meshWorkerClient';
 import { formatMillimeters } from '../utils/formatters';
-import { useViewer3DScene, type ShadingMode } from './useViewer3DScene';
-
-const SHADING_OPTIONS: { key: ShadingMode; label: string }[] = [
-  { key: 'jade', label: 'Verde Jade (Cavity)' },
-  { key: 'knight', label: 'Azul Armadura' },
-  { key: 'clay', label: 'Cinza Studio' },
-  { key: 'wax', label: 'Terracota' },
-  { key: 'matcap', label: 'MatCap Clássico' },
-];
+import { useViewer3DScene } from './useViewer3DScene';
+import { ViewportShadingControl } from './ViewportShadingControl';
 
 interface Viewer3DProps {
   modelFile: ModelFileEntry | null;
@@ -27,7 +20,7 @@ interface Viewer3DProps {
 }
 
 /**
- * Visualizador 3D Interativo: Camada de Interface React desacoplada do Motor WebGL.
+ * Visualizador 3D Interativo: respeita o MatCap + Cavity + Roughness + Specular global definido na entrada do App.
  */
 export const Viewer3D: React.FC<Viewer3DProps> = ({
   modelFile,
@@ -46,7 +39,6 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
 
   const [dimensions, setDimensions] = useState<BoundingBoxDimensions | null>(null);
   const [isWireframe, setIsWireframe] = useState<boolean>(false);
-  const [shadingMode, setShadingMode] = useState<ShadingMode>('jade');
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [isLoadingMesh, setIsLoadingMesh] = useState<boolean>(false);
 
@@ -67,7 +59,11 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
         const buffer = await window.electronAPI.readModelBuffer(modelFile.path);
         if (!active) return;
 
-        const object3d = parseModelBufferToMesh(buffer, modelFile.extension);
+        const object3d = await parseModelBufferAsync(buffer, modelFile.extension);
+        if (!active) {
+          disposeObjectGeometries(object3d);
+          return;
+        }
         const dims = prepareObjectOnPlate(object3d);
         meshGroupRef.current.add(object3d);
         setDimensions(dims);
@@ -75,7 +71,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
         onMeshLoaded?.(object3d, dims);
 
         resetEngineCamera(dims);
-        applyMaterialToMesh(shadingMode, false);
+        applyMaterialToMesh(false);
       } catch (err) {
         if (active) setViewerError((err as Error).message || 'Erro ao renderizar malha 3D.');
       } finally {
@@ -89,21 +85,12 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     return () => {
       active = false;
     };
-  }, [modelFile, onMeshLoaded, onMeshLoadingChange, resetEngineCamera, applyMaterialToMesh, shadingMode, meshGroupRef]);
+  }, [modelFile, onMeshLoaded, onMeshLoadingChange, resetEngineCamera, applyMaterialToMesh, meshGroupRef]);
 
   const toggleWireframe = () => {
     const next = !isWireframe;
     setIsWireframe(next);
-    applyMaterialToMesh(shadingMode, next);
-  };
-
-  const cycleShading = () => {
-    if (isWireframe) setIsWireframe(false);
-    const currIdx = SHADING_OPTIONS.findIndex((o) => o.key === shadingMode);
-    const nextIdx = (currIdx + 1) % SHADING_OPTIONS.length;
-    const nextMode = SHADING_OPTIONS[nextIdx].key;
-    setShadingMode(nextMode);
-    applyMaterialToMesh(nextMode, false);
+    applyMaterialToMesh(next);
   };
 
   const handleResetCamera = () => {
@@ -148,15 +135,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            className="btn"
-            onClick={cycleShading}
-            title="Alternar estilo de material e cor (Cavity + Specular + Roughness)"
-          >
-            <Palette size={16} aria-hidden="true" />
-            <span>{SHADING_OPTIONS.find((o) => o.key === shadingMode)?.label || 'Shader'}</span>
-          </button>
+          <ViewportShadingControl />
 
           <button type="button" className="btn" onClick={toggleWireframe} title="Alternar Malha (Wireframe)">
             <Grid size={16} aria-hidden="true" />

@@ -20,11 +20,69 @@ export interface BedDimensions {
 const DEFAULT_BED_WIDTH = 220;
 const DEFAULT_BED_DEPTH = 220;
 const DEFAULT_BED_HEIGHT = 250;
-const DEFAULT_MARGIN_MM = 10;
+const DEFAULT_MARGIN_MM = 8;
+
+interface RawShelfItem {
+  part: ArrangerPartInput;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+}
+
+function packWithShelfWidth(
+  sorted: ArrangerPartInput[],
+  shelfLimitWidth: number,
+  margin: number
+): { rawPositions: RawShelfItem[]; spanX: number; spanY: number } {
+  const rawPositions: RawShelfItem[] = [];
+  let currentX = 0;
+  let currentY = 0;
+  let currentRowHeight = 0;
+
+  for (const item of sorted) {
+    const w = item.orientation.bounds.width;
+    const d = item.orientation.bounds.depth;
+
+    if (currentX + w > shelfLimitWidth && currentX > 0) {
+      currentX = 0;
+      currentY += currentRowHeight + margin;
+      currentRowHeight = 0;
+    }
+
+    rawPositions.push({
+      part: item,
+      x: currentX + w * 0.5,
+      y: currentY + d * 0.5,
+      width: w,
+      depth: d,
+    });
+
+    currentX += w + margin;
+    if (d > currentRowHeight) currentRowHeight = d;
+  }
+
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  for (const p of rawPositions) {
+    const hw = p.width * 0.5;
+    const hd = p.depth * 0.5;
+    if (p.x - hw < minX) minX = p.x - hw;
+    if (p.x + hw > maxX) maxX = p.x + hw;
+    if (p.y - hd < minY) minY = p.y - hd;
+    if (p.y + hd > maxY) maxY = p.y + hd;
+  }
+
+  return {
+    rawPositions,
+    spanX: rawPositions.length > 0 ? maxX - minX : 0,
+    spanY: rawPositions.length > 0 ? maxY - minY : 0,
+  };
+}
 
 /**
- * Empacotador 2D (Shelf Nesting) que organiza as peças orientadas na mesa de impressão 3D.
- * Centraliza o conjunto ordenado por área e garante margens de folga entre as peças.
+ * Empacotador 2D (Shelf Nesting balanceado) que organiza as peças orientadas na mesa de impressão 3D.
+ * Centraliza cada peça pelo seu próprio bounding box rotacionado e agrupa no centro da mesa.
  */
 export function arrangePartsOnBed(
   parts: ArrangerPartInput[],
@@ -52,50 +110,39 @@ export function arrangePartsOnBed(
     };
   }
 
-  // Ordena peças da maior área de pegada para a menor
+  // Ordena da maior altura/área de pegada para a menor (melhor empacotamento em prateleiras)
   const sorted = [...parts].sort((a, b) => {
     const areaA = a.orientation.bounds.width * a.orientation.bounds.depth;
     const areaB = b.orientation.bounds.width * b.orientation.bounds.depth;
     return areaB - areaA;
   });
 
-  const rawPositions: Array<{
-    part: ArrangerPartInput;
-    x: number;
-    y: number;
-    width: number;
-    depth: number;
-  }> = [];
+  const maxRowWidth = Math.max(40, bedWidth - margin * 2);
+  const maxRowDepth = Math.max(40, bedDepth - margin * 2);
 
-  let currentX = 0;
-  let currentY = 0;
-  let currentRowHeight = 0;
-  const maxRowWidth = bedWidth - margin * 2;
-
+  let maxPartW = 0;
+  let sumFootprint = 0;
   for (const item of sorted) {
     const w = item.orientation.bounds.width;
     const d = item.orientation.bounds.depth;
-
-    // Se ultrapassar a largura da prateleira atual, salta para a próxima linha
-    if (currentX + w > maxRowWidth && currentX > 0) {
-      currentX = 0;
-      currentY += currentRowHeight + margin;
-      currentRowHeight = 0;
-    }
-
-    rawPositions.push({
-      part: item,
-      x: currentX + w * 0.5,
-      y: currentY + d * 0.5,
-      width: w,
-      depth: d,
-    });
-
-    currentX += w + margin;
-    if (d > currentRowHeight) currentRowHeight = d;
+    if (w > maxPartW) maxPartW = w;
+    sumFootprint += (w + margin) * (d + margin);
   }
 
-  // Calcula envelope total para centralizar na mesa
+  // Tenta um envelope quadrado/proporcional no centro da mesa; se exceder Y, usa a largura total da mesa
+  const aspectRatio = bedWidth / Math.max(1, bedDepth);
+  const idealClusterWidth = Math.min(
+    maxRowWidth,
+    Math.max(maxPartW, Math.sqrt(sumFootprint * aspectRatio) * 1.15)
+  );
+
+  let packed = packWithShelfWidth(sorted, idealClusterWidth, margin);
+  if (packed.spanY > maxRowDepth && idealClusterWidth < maxRowWidth) {
+    packed = packWithShelfWidth(sorted, maxRowWidth, margin);
+  }
+
+  const { rawPositions } = packed;
+
   let totalMinX = Infinity, totalMaxX = -Infinity;
   let totalMinY = Infinity, totalMaxY = -Infinity;
   let totalAreaMm2 = 0;
@@ -119,18 +166,24 @@ export function arrangePartsOnBed(
   const halfBedD = bedDepth * 0.5;
 
   rawPositions.forEach(({ part, x, y, width, depth }) => {
-    // Centraliza em relação à origem da mesa (0, 0)
-    const finalX = x - clusterCenterX;
-    const finalY = y - clusterCenterY;
+    const targetBedX = x - clusterCenterX;
+    const targetBedY = y - clusterCenterY;
+    const bounds = part.orientation.bounds;
+
+    // Compensa o centro local da geometria rotacionada para que a peça fique exatamente em (targetBedX, targetBedY, 0)
+    const rotCenterX = (bounds.minX + bounds.maxX) * 0.5;
+    const rotCenterY = (bounds.minY + bounds.maxY) * 0.5;
+
+    const finalX = targetBedX - rotCenterX;
+    const finalY = targetBedY - rotCenterY;
     const finalZ = part.orientation.offsetZ;
 
-    const bounds = part.orientation.bounds;
     const halfW = width * 0.5;
     const halfD = depth * 0.5;
 
     if (
-      Math.abs(finalX) + halfW > halfBedW ||
-      Math.abs(finalY) + halfD > halfBedD ||
+      Math.abs(targetBedX) + halfW > halfBedW ||
+      Math.abs(targetBedY) + halfD > halfBedD ||
       bounds.height > bedHeight
     ) {
       allFitOnBed = false;
@@ -142,6 +195,7 @@ export function arrangePartsOnBed(
       partId: part.id,
       name: part.name,
       position: [finalX, finalY, finalZ],
+      bedOffset: [targetBedX, targetBedY, 0],
       rotation: [q.x, q.y, q.z, q.w],
       bounds,
       contactAreaMm2: part.orientation.contactAreaMm2,
@@ -161,8 +215,7 @@ export function arrangePartsOnBed(
     bedCenterY,
     placements,
     allFitOnBed,
-    totalOccupiedAreaMm2: totalAreaMm2,
+    totalOccupiedAreaMm2: Math.round(totalAreaMm2),
     bedUtilizationPercent: Math.min(100, Math.round(bedUtilizationPercent * 10) / 10),
   };
 }
-
