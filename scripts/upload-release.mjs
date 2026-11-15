@@ -50,11 +50,12 @@ async function main() {
 
   const distDir = path.resolve('release');
   const exeName = `View 3DPrint Setup ${version}.exe`;
+  const remoteExeName = `View-3DPrint-Setup-${version}.exe`;
   const exePath = path.join(distDir, exeName);
   const ymlPath = path.join(distDir, 'latest.yml');
 
   await uploadAsset({ releaseId, filePath: ymlPath, assetName: 'latest.yml', contentType: 'application/x-yaml' });
-  await uploadAsset({ releaseId, filePath: exePath, assetName: exeName, contentType: 'application/octet-stream' });
+  await uploadAsset({ releaseId, filePath: exePath, assetName: remoteExeName, contentType: 'application/octet-stream' });
   console.log('[Upload] Concluído com sucesso!');
 }
 
