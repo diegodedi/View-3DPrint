@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const CACHE_FILENAME = 'library-index-cache.json';
 
 function getCacheFilePath(cacheDir) {

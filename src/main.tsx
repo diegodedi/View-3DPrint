@@ -8,6 +8,7 @@ import './styles/app.css';
 import './styles/inspector.css';
 import './styles/catpin.css';
 import './styles/smart-slicer.css';
+import './styles/web-tabs.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

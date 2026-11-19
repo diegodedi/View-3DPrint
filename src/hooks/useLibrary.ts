@@ -4,6 +4,9 @@ import { clearThumbnailQueue } from '../utils/thumbnailQueue';
 import { useSlicerSettings } from './useSlicerSettings';
 import { useCatalogItems } from './useCatalogItems';
 
+const ELECTRON_REQUIRED_MESSAGE =
+  'API do Electron não detectada. Abra pela janela do aplicativo (npm run dev ou INICIAR_APP.bat) — no navegador comum o acesso às pastas locais fica bloqueado.';
+
 /**
  * Orquestrador principal da biblioteca 3D: coordena catálogo, seleção e fatiamento.
  */
@@ -24,6 +27,7 @@ export function useLibrary() {
     categories,
     filteredItems,
     updateItemMetadata,
+    registerAutoThumbnailPath,
     clearNotifications,
   } = useCatalogItems();
 
@@ -60,7 +64,7 @@ export function useLibrary() {
     async function init() {
       if (!window.electronAPI) {
         setIsLoading(false);
-        setErrorMessage('API do Electron não detectada.');
+        setErrorMessage(ELECTRON_REQUIRED_MESSAGE);
         return;
       }
       try {
@@ -85,7 +89,10 @@ export function useLibrary() {
   }, [applyLoadedData, setIsLoading, setErrorMessage]);
 
   const chooseFolder = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI) {
+      setErrorMessage(ELECTRON_REQUIRED_MESSAGE);
+      return;
+    }
     try {
       setIsLoading(true);
       const res = await window.electronAPI.selectLibraryFolder();
@@ -101,7 +108,10 @@ export function useLibrary() {
   }, [applyLoadedData, setIsLoading, setStatusMessage, setErrorMessage]);
 
   const refreshLibrary = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!window.electronAPI) {
+      setErrorMessage(ELECTRON_REQUIRED_MESSAGE);
+      return;
+    }
     try {
       setIsLoading(true);
       const res = await window.electronAPI.rescanLibrary(settings.libraryPath);
@@ -146,5 +156,6 @@ export function useLibrary() {
     launchConfiguredInSlicer,
     updateSettings,
     saveNotesAndThumb: updateItemMetadata,
+    registerAutoThumbnailPath,
   };
 }

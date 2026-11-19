@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { loadScannerCache, saveScannerCache } = require('./scannerCache.cjs');
+const {
+  computeAutoThumbCacheKey,
+  listCachedThumbFiles,
+  resolveCachedThumbPath,
+} = require('./thumbCache.cjs');
 
 const MODEL_EXTENSIONS = new Set(['.stl', '.obj', '.3mf']);
 const TEXT_EXTENSIONS = new Set(['.txt', '.md']);
@@ -42,7 +47,7 @@ async function readFolderMetaAsync(metaPath) {
 }
 
 async function buildItemFromEntries(params) {
-  const { dirPath, rootPath, entries, dirMtimeMs, metaMtimeMs, hasThumb } = params;
+  const { dirPath, rootPath, entries, dirMtimeMs, metaMtimeMs, hasThumb, cacheDir, thumbFileSet } = params;
   const modelFiles = [];
   const textFiles = [];
 
@@ -74,6 +79,7 @@ async function buildItemFromEntries(params) {
         path: f.fullPath,
         extension: f.ext.replace('.', '').toUpperCase(),
         sizeBytes: stat.size,
+        mtimeMs: Math.trunc(stat.mtimeMs),
       };
     })
   );
@@ -89,6 +95,15 @@ async function buildItemFromEntries(params) {
   const segments = relativeFolder.split(path.sep).filter(Boolean);
   const category = segments.length > 1 ? formatFolderTitle(segments[0]) : 'Geral';
   const description = descriptionRaw || `${models.length} arquivo(s): ${models.map((m) => m.name).join(', ')}`;
+  const thumbCacheKey = computeAutoThumbCacheKey(dirPath, models[0]);
+  const legacyThumbPath = hasThumb ? path.join(dirPath, THUMB_FILE_NAME) : null;
+  const resolvedThumb = resolveCachedThumbPath({
+    cacheDir,
+    thumbFileSet,
+    folderPath: dirPath,
+    cacheKey: thumbCacheKey,
+    legacyPath: legacyThumbPath,
+  });
 
   return {
     id: Buffer.from(dirPath).toString('base64url'),
@@ -100,7 +115,8 @@ async function buildItemFromEntries(params) {
     description,
     notes: meta.notes,
     tags: meta.tags,
-    thumbnailPath: hasThumb ? path.join(dirPath, THUMB_FILE_NAME) : null,
+    thumbnailPath: resolvedThumb,
+    thumbCacheKey,
     models,
     updatedAt: dirMtimeMs,
   };
@@ -120,7 +136,10 @@ async function scanLibraryFolderAsync(rootPath, options = {}) {
     return [];
   }
 
-  const prevCache = await loadScannerCache(cacheDir, rootPath);
+  const [prevCache, thumbFileSet] = await Promise.all([
+    loadScannerCache(cacheDir, rootPath),
+    listCachedThumbFiles(cacheDir),
+  ]);
   const nextCache = {};
   const results = [];
   const queue = [{ dirPath: rootPath, depth: 0 }];
@@ -174,8 +193,18 @@ async function scanLibraryFolderAsync(rootPath, options = {}) {
       cached.hasThumb === hasThumb &&
       cached.item
     ) {
-      nextCache[dirPath] = cached;
-      results.push(cached.item);
+      const legacyThumbPath = hasThumb ? path.join(dirPath, THUMB_FILE_NAME) : null;
+      const cacheKey = cached.item.thumbCacheKey || computeAutoThumbCacheKey(dirPath, cached.item.models?.[0]);
+      const resolvedThumb = resolveCachedThumbPath({
+        cacheDir,
+        thumbFileSet,
+        folderPath: dirPath,
+        cacheKey,
+        legacyPath: legacyThumbPath,
+      });
+      const hydratedItem = { ...cached.item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb };
+      nextCache[dirPath] = { ...cached, item: hydratedItem };
+      results.push(hydratedItem);
       return;
     }
 
@@ -186,6 +215,8 @@ async function scanLibraryFolderAsync(rootPath, options = {}) {
       dirMtimeMs,
       metaMtimeMs,
       hasThumb,
+      cacheDir,
+      thumbFileSet,
     });
     if (item) {
       nextCache[dirPath] = { dirMtimeMs, metaMtimeMs, hasThumb, item };

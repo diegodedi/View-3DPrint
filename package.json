@@ -1,6 +1,6 @@
 {
   "name": "view-3dprint",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Visualizador e organizador de objetos 3D para impressao com abertura em 1 clique no fatiador Creality Print",
   "main": "electron/main.cjs",
   "author": "DieTools",
@@ -48,6 +48,7 @@
       "package.json"
     ],
     "win": {
+      "icon": "electron/assets/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -58,6 +59,9 @@
       ]
     },
     "nsis": {
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "installerHeaderIcon": "electron/assets/icon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

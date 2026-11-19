@@ -1,6 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const { scanLibraryFolderAsync } = require('./scannerAsync.cjs');
+const { loadScannerCache } = require('./scannerCache.cjs');
+const { primeLocalAssetCache } = require('./localAssetProtocol.cjs');
+const {
+  computeAutoThumbCacheKey,
+  listCachedThumbFiles,
+  resolveCachedThumbPath,
+  saveCustomThumbnailDataUrl,
+} = require('./thumbCache.cjs');
 
 const MODEL_EXTENSIONS = new Set(['.stl', '.obj', '.3mf']);
 const TEXT_EXTENSIONS = new Set(['.txt', '.md']);
@@ -39,14 +47,14 @@ function readFolderMetadata(folderPath) {
 }
 
 /**
- * Saves custom metadata (notes, tags, or PNG dataUrl thumbnail) inside the object folder.
+ * Saves custom metadata (notes, tags, or JPEG/WebP custom thumbnail) asynchronously.
+ * Custom thumbnails are saved to centralized SSD cache when cacheDir is provided.
  * @param {string} folderPath
  * @param {{ notes?: string, tags?: string[], customThumbnail?: string }} payload
+ * @param {string | null} [cacheDir]
  */
-function saveFolderMetadata(folderPath, payload) {
-  if (!folderPath || !fs.existsSync(folderPath)) {
-    throw new Error('Pasta do objeto não encontrada.');
-  }
+async function saveFolderMetadata(folderPath, payload, cacheDir = null) {
+  if (!folderPath) throw new Error('Pasta do objeto não encontrada.');
   const current = readFolderMetadata(folderPath);
   const updated = {
     notes: payload.notes !== undefined ? payload.notes : current.notes,
@@ -55,14 +63,49 @@ function saveFolderMetadata(folderPath, payload) {
 
   let savedThumbPath = null;
   if (payload.customThumbnail && payload.customThumbnail.startsWith('data:image/')) {
-    const base64Data = payload.customThumbnail.replace(/^data:image\/\w+;base64,/, '');
-    savedThumbPath = path.join(folderPath, THUMB_FILE_NAME);
-    fs.writeFileSync(savedThumbPath, Buffer.from(base64Data, 'base64'));
+    if (cacheDir) {
+      savedThumbPath = await saveCustomThumbnailDataUrl(cacheDir, folderPath, payload.customThumbnail);
+    } else {
+      const base64Data = payload.customThumbnail.replace(/^data:image\/\w+;base64,/, '');
+      const imgBuf = Buffer.from(base64Data, 'base64');
+      savedThumbPath = path.join(folderPath, THUMB_FILE_NAME);
+      primeLocalAssetCache(savedThumbPath, imgBuf);
+      await fs.promises.writeFile(savedThumbPath, imgBuf);
+    }
   }
 
-  const metaPath = path.join(folderPath, META_FILE_NAME);
-  fs.writeFileSync(metaPath, JSON.stringify(updated, null, 2), 'utf-8');
+  if (payload.notes !== undefined || payload.tags !== undefined) {
+    const metaPath = path.join(folderPath, META_FILE_NAME);
+    await fs.promises.writeFile(metaPath, JSON.stringify(updated, null, 2), 'utf-8');
+  }
   return { ...updated, customThumbnail: savedThumbPath };
+}
+
+/**
+ * Reads persisted scanner cache items immediately for instant warm startup with O(1) thumb lookup.
+ * @param {string} rootPath
+ * @param {string | null} cacheDir
+ */
+async function readCachedLibraryItems(rootPath, cacheDir) {
+  const [entries, thumbFileSet] = await Promise.all([
+    loadScannerCache(cacheDir, rootPath),
+    listCachedThumbFiles(cacheDir),
+  ]);
+  const items = [];
+  for (const entry of Object.values(entries)) {
+    if (!entry || !entry.item) continue;
+    const item = entry.item;
+    const cacheKey = item.thumbCacheKey || computeAutoThumbCacheKey(item.folderPath, item.models?.[0]);
+    const resolvedThumb = resolveCachedThumbPath({
+      cacheDir,
+      thumbFileSet,
+      folderPath: item.folderPath,
+      cacheKey,
+      legacyPath: item.thumbnailPath,
+    });
+    items.push({ ...item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb });
+  }
+  return items.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
 /**
@@ -180,4 +223,4 @@ function scanLibraryFolder(rootPath, maxDepth = 5) {
   return results.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
-module.exports = { scanLibraryFolder, scanLibraryFolderAsync, saveFolderMetadata };
+module.exports = { scanLibraryFolder, scanLibraryFolderAsync, saveFolderMetadata, readCachedLibraryItems };

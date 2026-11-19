@@ -1,6 +1,15 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { FolderSearch } from 'lucide-react';
+import { FolderSearch, Pause, Play } from 'lucide-react';
 import type { PrintObjectItem } from '../types/models';
+import type { ThumbIndexerProgress } from '../types/thumbCache';
+import {
+  getCachedGeneratedThumbnail,
+  notifyGridScrolling,
+  setThumbnailIndexerPaused,
+  startLibraryThumbnailIndexer,
+  subscribeIndexerProgress,
+} from '../utils/thumbnailQueue';
+import { buildLocalAssetUrl, predecodeThumbnailUrls } from '../utils/thumbPredecoder';
 import { ObjectCard } from './ObjectCard';
 
 interface ObjectGridProps {
@@ -9,16 +18,17 @@ interface ObjectGridProps {
   onSelect: (id: string) => void;
   onQuickSlice: (modelPath: string) => void;
   onSelectFolder: () => void;
-  onAutoThumbnailGenerated: (folderPath: string, dataUrl: string) => void;
+  onAutoThumbnailGenerated: (folderPath: string, thumbnailPath: string) => void;
 }
 
 const MIN_CARD_WIDTH = 250;
 const GRID_GAP = 16;
 const DEFAULT_ROW_HEIGHT = 315;
-const OVERSCAN_ROWS = 2;
+const OVERSCAN_ROWS = 4;
+const PREDECODE_EXTRA_ROWS = 4;
 
 /**
- * Virtualized MakerWorld-style Asset Browser grid capable of handling thousands of folders smoothly.
+ * Virtualized Asset Browser grid with rAF-throttled scroll, ahead/behind image pre-decoding, and background indexer bar.
  */
 export const ObjectGrid: React.FC<ObjectGridProps> = ({
   items,
@@ -30,17 +40,47 @@ export const ObjectGrid: React.FC<ObjectGridProps> = ({
 }) => {
   const mainRef = useRef<HTMLElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef<number>(0);
+
   const [scrollTop, setScrollTop] = useState<number>(0);
   const [viewportHeight, setViewportHeight] = useState<number>(720);
   const [columns, setColumns] = useState<number>(4);
   const [rowHeight, setRowHeight] = useState<number>(DEFAULT_ROW_HEIGHT);
+  const [indexer, setIndexer] = useState<ThumbIndexerProgress>({
+    total: 0,
+    completed: 0,
+    pending: 0,
+    isRunning: false,
+    isPaused: false,
+  });
+
+  const listIdentityKey = `${items.length}:${items[0]?.id ?? ''}:${items[items.length - 1]?.id ?? ''}`;
+
+  useEffect(() => {
+    return subscribeIndexerProgress(setIndexer);
+  }, []);
 
   useEffect(() => {
     if (mainRef.current) {
       mainRef.current.scrollTop = 0;
     }
+    pendingScrollTopRef.current = 0;
     setScrollTop(0);
-  }, [items]);
+  }, [listIdentityKey]);
+
+  useEffect(() => {
+    if (isLoading || items.length === 0) return;
+    startLibraryThumbnailIndexer(items, onAutoThumbnailGenerated);
+  }, [isLoading, items, onAutoThumbnailGenerated]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const container = mainRef.current;
@@ -88,8 +128,32 @@ export const ObjectGrid: React.FC<ObjectGridProps> = ({
     grid.style.setProperty('--grid-pad-bottom', `${paddingBottom}px`);
   }, [paddingTop, paddingBottom, isLoading, items.length]);
 
+  useEffect(() => {
+    if (isLoading || items.length === 0) return;
+    const preStart = Math.max(0, (startRow - PREDECODE_EXTRA_ROWS) * columns);
+    const preEnd = Math.min(items.length, (endRow + PREDECODE_EXTRA_ROWS) * columns);
+    const urls: string[] = [];
+    for (let i = preStart; i < preEnd; i++) {
+      const it = items[i];
+      const cachedUrl = getCachedGeneratedThumbnail(it.folderPath);
+      if (cachedUrl) {
+        urls.push(cachedUrl);
+      } else if (it.thumbnailPath) {
+        urls.push(buildLocalAssetUrl(it.thumbnailPath, it.updatedAt));
+      }
+    }
+    predecodeThumbnailUrls(urls);
+  }, [isLoading, items, startRow, endRow, columns]);
+
   const handleScroll = (e: React.UIEvent<HTMLElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
+    pendingScrollTopRef.current = e.currentTarget.scrollTop;
+    notifyGridScrolling();
+    if (scrollRafRef.current === null) {
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        setScrollTop(pendingScrollTopRef.current);
+      });
+    }
   };
 
   if (isLoading) {
@@ -132,17 +196,36 @@ export const ObjectGrid: React.FC<ObjectGridProps> = ({
       aria-label="Galeria de objetos 3D"
       onScroll={handleScroll}
     >
-      <div
-        ref={gridRef}
-        className="maker-grid"
-      >
+      {indexer.pending > 0 && (
+        <div className="thumb-indexer-bar" role="status" aria-live="polite">
+          <span className="thumb-indexer-text">
+            {indexer.isPaused
+              ? `Pré-carregamento pausado (${indexer.completed} / ${indexer.total})`
+              : `Preparando miniaturas em cache: ${indexer.completed} / ${indexer.total}`}
+          </span>
+          <progress
+            className="thumb-indexer-progress"
+            max={Math.max(1, indexer.total)}
+            value={indexer.completed}
+          />
+          <button
+            type="button"
+            className="thumb-indexer-btn"
+            onClick={() => setThumbnailIndexerPaused(!indexer.isPaused)}
+          >
+            {indexer.isPaused ? <Play size={12} /> : <Pause size={12} />}
+            <span>{indexer.isPaused ? 'Retomar' : 'Pausar'}</span>
+          </button>
+        </div>
+      )}
+
+      <div ref={gridRef} className="maker-grid">
         {visibleItems.map((item) => (
           <ObjectCard
             key={item.id}
             item={item}
             onSelect={onSelect}
             onQuickSlice={onQuickSlice}
-            onAutoThumbnailGenerated={onAutoThumbnailGenerated}
           />
         ))}
       </div>

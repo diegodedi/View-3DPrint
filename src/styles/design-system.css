@@ -56,6 +56,16 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  --radius-pill: 9999px;
+
+  /* Scrollbar Tokens */
+  --scrollbar-size: 10px;
+  --scrollbar-size-horizontal: 8px;
+  --scrollbar-thumb-pad: 2px;
+  --color-scrollbar-track: transparent;
+  --color-scrollbar-thumb: #3D3D3D;
+  --color-scrollbar-thumb-hover: #575757;
+  --color-scrollbar-thumb-active: var(--color-primary);
 
   /* Accessibility Touch Targets (Rule 6) */
   --touch-min: 44px;
@@ -93,4 +103,39 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+/* Custom Scrollbars — MakerWorld Neutral Dark */
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size-horizontal);
+}
+
+*::-webkit-scrollbar-track {
+  background-color: var(--color-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-scrollbar-thumb);
+  border-radius: var(--radius-pill);
+  border: var(--scrollbar-thumb-pad) solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--color-scrollbar-thumb-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }

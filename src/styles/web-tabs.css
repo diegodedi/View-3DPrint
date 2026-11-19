@@ -1,0 +1,290 @@
+.workspace-tabs-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg);
+}
+
+.workspace-tab-btn,
+.webtab-action-btn,
+.webtab-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.workspace-tab-btn {
+  padding: 0 var(--space-3);
+  background-color: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.workspace-tab-btn:hover {
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+.workspace-tab-btn[data-active='true'],
+.webtab-action-primary {
+  background-color: var(--color-primary);
+  color: var(--color-bg);
+}
+
+.workspace-viewer-pane,
+.webtab-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-hidden {
+  display: none;
+}
+
+.webtab-workspace {
+  background-color: var(--color-bg);
+}
+
+.webtab-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.webtab-toolbar-left,
+.webtab-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.webtab-toolbar-left {
+  flex: 1;
+}
+
+.webtab-icon-btn {
+  min-width: 36px;
+  padding: 0 var(--space-2);
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+.webtab-action-btn {
+  padding: 0 var(--space-3);
+  background-color: var(--color-surface-elevated);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.webtab-icon-btn:hover:not(:disabled),
+.webtab-action-btn:hover:not(:disabled) {
+  background-color: var(--color-border);
+}
+
+.webtab-action-primary:hover:not(:disabled) {
+  background-color: var(--color-primary);
+  opacity: 0.9;
+}
+
+.webtab-icon-btn:disabled,
+.webtab-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.webtab-action-danger {
+  color: var(--color-error);
+}
+
+.webtab-address-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  max-width: 460px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+}
+
+.webtab-address-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webtab-inline-url-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  max-width: 520px;
+}
+
+.webtab-url-input {
+  flex: 1;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+.webtab-url-input-sm {
+  min-height: 36px;
+  font-size: var(--text-sm);
+}
+
+.webtab-error-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-surface-elevated);
+  color: var(--color-error);
+  font-size: var(--text-sm);
+}
+
+.webtab-error-bar-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.webtab-viewport-slot {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  width: 100%;
+  background-color: var(--color-bg);
+}
+
+.webtab-picker,
+.webtab-empty-state {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.webtab-picker-card {
+  width: 100%;
+  max-width: 640px;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.webtab-picker-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.webtab-picker-title,
+.webtab-empty-title {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.webtab-picker-subtitle,
+.webtab-empty-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.webtab-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.webtab-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-elevated);
+  cursor: pointer;
+  text-align: left;
+}
+
+.webtab-preset-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.webtab-preset-name {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.webtab-preset-desc {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.webtab-custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.webtab-custom-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.webtab-custom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.webtab-custom-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.webtab-error-inline {
+  font-size: var(--text-sm);
+  color: var(--color-error);
+}

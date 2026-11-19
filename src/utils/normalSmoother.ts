@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 
+const MAX_HASH_TABLE_SIZE = 1 << 22;
+
+function nextPowerOfTwo(target: number): number {
+  let size = 1024;
+  while (size < target && size < MAX_HASH_TABLE_SIZE) size <<= 1;
+  return size;
+}
+
 /**
  * Calcula normais suaves com Crease Angle E o atributo de curvatura multi-escala `aCavity`
  * (`vec3(valleyTight, valleyWide, ridge)`) diretamente na geometria, SEM alterar `position` ou `index`.
@@ -42,7 +50,9 @@ export function computeCreasedNormalsInPlace(
   const invCell = 100000 / span;
   const epsSq = (span * 1e-4) * (span * 1e-4);
 
-  const head = new Map<number, number>();
+  const tableSize = nextPowerOfTwo(vertexCount * 2);
+  const tableMask = tableSize - 1;
+  const head = new Int32Array(tableSize).fill(-1);
   const nextWelded = new Int32Array(vertexCount).fill(-1);
   const weldedOf = new Int32Array(vertexCount);
   const repVertex = new Int32Array(vertexCount);
@@ -54,10 +64,10 @@ export function computeCreasedNormalsInPlace(
     const qx = Math.round((vx - minX) * invCell);
     const qy = Math.round((vy - minY) * invCell);
     const qz = Math.round((vz - minZ) * invCell);
-    const hash = ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) | 0;
+    const bucket = (((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) | 0) & tableMask;
 
     let foundW = -1;
-    let currW = head.get(hash) ?? -1;
+    let currW = head[bucket];
     while (currW !== -1) {
       const rIdx = repVertex[currW] * 3;
       const dx = posArray[rIdx] - vx;
@@ -73,8 +83,8 @@ export function computeCreasedNormalsInPlace(
     if (foundW === -1) {
       foundW = weldedCount++;
       repVertex[foundW] = v;
-      nextWelded[foundW] = head.get(hash) ?? -1;
-      head.set(hash, foundW);
+      nextWelded[foundW] = head[bucket];
+      head[bucket] = foundW;
     }
     weldedOf[v] = foundW;
   }
@@ -97,9 +107,10 @@ export function computeCreasedNormalsInPlace(
     let nx = aby * acz - abz * acy;
     let ny = abz * acx - abx * acz;
     let nz = abx * acy - aby * acx;
-    const len = Math.hypot(nx, ny, nz);
+    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
     if (len > 1e-12) {
-      nx /= len; ny /= len; nz /= len;
+      const invLen = 1 / len;
+      nx *= invLen; ny *= invLen; nz *= invLen;
     }
     faceNormals[t3] = nx;
     faceNormals[t3 + 1] = ny;
@@ -115,9 +126,11 @@ export function computeCreasedNormalsInPlace(
 
   for (let w = 0; w < weldedCount; w++) {
     const w3 = w * 3;
-    const len = Math.hypot(wNormals[w3], wNormals[w3 + 1], wNormals[w3 + 2]);
+    const x = wNormals[w3], y = wNormals[w3 + 1], z = wNormals[w3 + 2];
+    const len = Math.sqrt(x * x + y * y + z * z);
     if (len > 1e-12) {
-      wNormals[w3] /= len; wNormals[w3 + 1] /= len; wNormals[w3 + 2] /= len;
+      const invLen = 1 / len;
+      wNormals[w3] = x * invLen; wNormals[w3 + 1] = y * invLen; wNormals[w3 + 2] = z * invLen;
     }
   }
 
@@ -132,7 +145,7 @@ export function computeCreasedNormalsInPlace(
     const dx = posArray[pb] - posArray[pa];
     const dy = posArray[pb + 1] - posArray[pa + 1];
     const dz = posArray[pb + 2] - posArray[pa + 2];
-    const dist = Math.hypot(dx, dy, dz);
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (dist < 1e-9) return;
 
     const na = wa * 3, nb = wb * 3;
@@ -174,11 +187,12 @@ export function computeCreasedNormalsInPlace(
     ridgeArr[w] = rRaw;
   }
 
-  // 4. Difusão topológica multi-anel (10 anéis) para o Cavity Distance (espalhamento em cavidades largas)
+  // 4. Difusão topológica multi-anel adaptativa para o Cavity Distance (espalhamento em cavidades largas)
+  const diffusionPasses = triCount > 300000 ? 6 : triCount > 150000 ? 8 : 10;
   let nextWide = new Float32Array(weldedCount);
   const ringCnt = new Uint16Array(weldedCount);
 
-  for (let pass = 0; pass < 10; pass++) {
+  for (let pass = 0; pass < diffusionPasses; pass++) {
     nextWide.fill(0);
     ringCnt.fill(0);
     for (let t = 0; t < triCount; t++) {

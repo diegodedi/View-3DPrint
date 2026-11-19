@@ -11,17 +11,30 @@ let sharedThumbScene: THREE.Scene | null = null;
 let sharedThumbCamera: THREE.PerspectiveCamera | null = null;
 let sharedModelHolder: THREE.Group | null = null;
 
+export interface MeshMaterialOptions {
+  skipCavity?: boolean;
+}
+
 /**
  * Applies the gray studio MatCap material to every mesh inside an Object3D.
  * @param object3d Target Three.js Object3D
+ * @param options Optional parsing/material settings (skipCavity defaults to false)
  */
-export function applyGrayMatcapToObject(object3d: THREE.Object3D): void {
+export function applyGrayMatcapToObject(
+  object3d: THREE.Object3D,
+  options: MeshMaterialOptions = {}
+): void {
   const mat = createGrayMatcapMaterial();
+  const skipCavity = Boolean(options.skipCavity);
   object3d.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
       if (mesh.geometry) {
-        computeCreasedNormalsInPlace(mesh.geometry);
+        if (skipCavity) {
+          if (!mesh.geometry.attributes.normal) mesh.geometry.computeVertexNormals();
+        } else {
+          computeCreasedNormalsInPlace(mesh.geometry);
+        }
       }
       mesh.material = mat;
     }
@@ -60,15 +73,24 @@ function ensureArrayBuffer(buf: unknown): ArrayBuffer {
  * Parses an ArrayBuffer into a Three.js Object3D with stable gray MatCap applied.
  * @param buffer Raw file buffer
  * @param extension File extension ('STL' | 'OBJ' | '3MF')
+ * @param options Optional parsing settings (skipCavity defaults to false)
  */
-export function parseModelBufferToMesh(buffer: ArrayBuffer | Uint8Array, extension: string): THREE.Object3D {
+export function parseModelBufferToMesh(
+  buffer: ArrayBuffer | Uint8Array,
+  extension: string,
+  options: MeshMaterialOptions = {}
+): THREE.Object3D {
   const safeBuffer = ensureArrayBuffer(buffer);
   const ext = extension.toUpperCase();
 
   if (ext === 'STL') {
     const loader = new STLLoader();
     const geometry = loader.parse(safeBuffer);
-    computeCreasedNormalsInPlace(geometry);
+    if (options.skipCavity) {
+      if (!geometry.attributes.normal) geometry.computeVertexNormals();
+    } else {
+      computeCreasedNormalsInPlace(geometry);
+    }
     return new THREE.Mesh(geometry, createGrayMatcapMaterial());
   }
 
@@ -76,14 +98,14 @@ export function parseModelBufferToMesh(buffer: ArrayBuffer | Uint8Array, extensi
     const loader = new OBJLoader();
     const text = new TextDecoder().decode(safeBuffer);
     const group = loader.parse(text);
-    applyGrayMatcapToObject(group);
+    applyGrayMatcapToObject(group, options);
     return group;
   }
 
   if (ext === '3MF') {
     const loader = new ThreeMFLoader();
     const group = loader.parse(safeBuffer);
-    applyGrayMatcapToObject(group);
+    applyGrayMatcapToObject(group, options);
     return group;
   }
 

@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { PrintObjectItem } from '../types/models';
+import { setCachedGeneratedThumbnail } from '../utils/thumbnailQueue';
+import { buildLocalAssetUrl } from '../utils/thumbPredecoder';
 
 /**
  * Hook modular que gerencia a lista de arquivos 3D, busca, categorias e metadados de itens.
@@ -34,10 +36,27 @@ export function useCatalogItems() {
     });
   }, [items, searchQuery, activeCategory]);
 
+  const registerAutoThumbnailPath = useCallback((folderPath: string, thumbnailPath: string) => {
+    if (!folderPath || !thumbnailPath) return;
+    setItems((prev) => {
+      const target = prev.find((it) => it.folderPath === folderPath);
+      if (target && !target.thumbnailPath) {
+        target.thumbnailPath = thumbnailPath;
+      }
+      return prev;
+    });
+  }, []);
+
   const updateItemMetadata = useCallback(
     async (folderPath: string, payload: { notes?: string; customThumbnail?: string }) => {
       if (!window.electronAPI) return;
       const updatedMeta = await window.electronAPI.saveObjectMetadata(folderPath, payload);
+      const now = Date.now();
+      if (updatedMeta.customThumbnail) {
+        setCachedGeneratedThumbnail(folderPath, buildLocalAssetUrl(updatedMeta.customThumbnail, now));
+      } else if (payload.customThumbnail) {
+        setCachedGeneratedThumbnail(folderPath, payload.customThumbnail);
+      }
       setItems((prev) =>
         prev.map((item) =>
           item.folderPath === folderPath
@@ -45,7 +64,7 @@ export function useCatalogItems() {
                 ...item,
                 notes: updatedMeta.notes,
                 thumbnailPath: updatedMeta.customThumbnail || item.thumbnailPath,
-                updatedAt: updatedMeta.customThumbnail ? Date.now() : item.updatedAt,
+                updatedAt: updatedMeta.customThumbnail ? now : item.updatedAt,
               }
             : item
         )
@@ -75,6 +94,7 @@ export function useCatalogItems() {
     categories,
     filteredItems,
     updateItemMetadata,
+    registerAutoThumbnailPath,
     clearNotifications,
   };
 }

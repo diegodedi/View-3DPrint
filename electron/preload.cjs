@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('app:save-settings', settings),
   saveObjectMetadata: (folderPath, metadata) =>
     ipcRenderer.invoke('app:save-object-metadata', { folderPath, metadata }),
+  thumbCache: {
+    saveAutoWebp: (cacheKey, bytes, ext = '.webp') =>
+      ipcRenderer.invoke('thumbcache:save-auto', { cacheKey, bytes, ext }),
+    extract3mfThumb: (modelPath, cacheKey) =>
+      ipcRenderer.invoke('thumbcache:extract-3mf', { modelPath, cacheKey }),
+  },
   executeCatpinCut: (payload) => ipcRenderer.invoke('app:execute-catpin-cut', payload),
   suggestCatpinPin: (payload) => ipcRenderer.invoke('app:suggest-catpin-pin', payload),
   diagnoseCatpinModel: (payload) => ipcRenderer.invoke('app:diagnose-catpin-model', payload),
@@ -83,4 +89,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openMultiPartInSlicer: (payload) => ipcRenderer.invoke('app:open-multi-part-in-slicer', payload),
   checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+  webTabs: {
+    getConfig: () => ipcRenderer.invoke('webtabs:get-config'),
+    activate: (tabId, bounds) => ipcRenderer.invoke('webtabs:activate', { tabId, bounds }),
+    setBounds: (bounds) => ipcRenderer.invoke('webtabs:set-bounds', { bounds }),
+    setSuspended: (suspended) => ipcRenderer.invoke('webtabs:set-suspended', { suspended }),
+    setUrl: (tabId, url, bounds) => ipcRenderer.invoke('webtabs:set-url', { tabId, url, bounds }),
+    resetGen3d: (bounds) => ipcRenderer.invoke('webtabs:reset-gen3d', { bounds }),
+    logoutChat: (clearSession) => ipcRenderer.invoke('webtabs:logout-chat', { clearSession }),
+    reload: (tabId) => ipcRenderer.invoke('webtabs:reload', { tabId }),
+    navigateHistory: (tabId, direction) =>
+      ipcRenderer.invoke('webtabs:navigate-history', { tabId, direction }),
+    closeView: (tabId) => ipcRenderer.invoke('webtabs:close-view', { tabId }),
+    onStateChanged: (listener) => {
+      const handler = (_event, payload) => listener(payload);
+      ipcRenderer.on('webtabs:state-changed', handler);
+      return () => ipcRenderer.removeListener('webtabs:state-changed', handler);
+    },
+  },
 });

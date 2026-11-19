@@ -11,6 +11,7 @@
 
 ## Folder Structure
 electron/
+  assets/                → Ícones oficiais do aplicativo e instalador (`icon.png`, `icon.ico`)
   updater.cjs            → Módulo modular de checagem, download e instalação de atualizações automáticas via GitHub Releases
   catpin/
     algebra.mjs            → Álgebra vetorial e matricial 3D/4D pura em ordem coluna-maior
@@ -27,27 +28,32 @@ electron/
   localAssetProtocol.cjs   → Custom local-asset:// protocol handler for zero-Base64 cached thumbnails
   main.cjs                 → Electron main process, window lifecycle, IPC handlers (CatPin cut & suggest)
   preload.cjs              → Secure contextBridge API with small LRU model buffer cache
-  scannerCache.cjs         → Persisted directory mtime index cache in userData
-  scannerAsync.cjs         → Concurrent async library folder scanner with mtime cache & 2KB head read
-  scanner.cjs              → Recursive 3D folder scanner, description & metadata reader
+  scannerCache.cjs         → Persisted directory mtime index cache in userData (v2)
+  scannerAsync.cjs         → Concurrent async library folder scanner with mtime cache, O(1) SSD thumb cache & 2KB head read
+  scanner.cjs              → Recursive 3D folder scanner, description & centralized metadata/thumbnail saver
+  thumbCache.cjs           → Centralized SSD WebP thumbnail cache (userData/thumb-cache) with SHA-1 incremental keys & IPC
+  thumb3mfExtractor.cjs    → Zero-dependency ZIP Central Directory extractor for embedded .3mf preview images
   slicerService.cjs        → Auto-detection (Creality Print priority), in-memory preset cache, 1-click spawn
   crealityPresets.cjs      → Reads Creality Print machine/filament/process profiles & merges JSONs
   creality3mfBuilder.cjs   → Builds complete Creality Print `.3mf` packages with smart parameters
   multiPart3mfService.cjs  → Generates standard Multi-Part `.3mf` project packages with arranged plate transforms
   zipWriter.cjs            → Native Node.js zlib/CRC32 `.zip`/`.3mf` archive generator (sync + async)
+  webTabsConfig.cjs        → Persistência de URLs, validação e User-Agent das abas web externas (Chat / 3D Generation)
+  webTabsService.cjs       → Gerenciador de WebContentsView com sessões persistentes (`persist:ai-chat`, `persist:3d-gen`) e IPC
 INICIAR_APP.bat            → 1-click desktop launcher for Windows users
 src/
   components/
     CatPin/                → CatPinModal, CatPinCanvas, CatPinControls, CatPinConnectorFields, CatPinPartsList, CatPinResultPanel, CatPinOverlay2D, CatPinViewportToolbar, useCatPinMultiParts, useCatPinPlateArrangement, useCatPinCutWorkflow, useCatPinShortcuts, useCatPinCutterLifecycle, useCatPinMirrorLifecycle, useCatPinPointReprojection, useCatPinScene, useCatPinPoints3D, useCatPinGizmoSync, useCatPinResultMesh, useCatPinConnectors, useCatPinModelMesh, useCatPinModelLoader
+    WebTabs/               → WebTabWorkspace, WebTabToolbar, AiChatPicker (abas externas integradas Chat e 3D Generation)
     ...                    → Header, ViewportShadingControl, ViewportShadingSpherePreview, ObjectGrid, ObjectCard, Viewer3D, useViewer3DScene, DetailsPanel, SlicerModal, SmartSlicePanel, SmartSliceFields, ModelNotesField
-  hooks/                   → Custom React hooks (`useLibrary.ts`, `useCatalogItems.ts`, `useSlicerSettings.ts`)
-  styles/                  → `design-system.css`, `app.css`, `inspector.css`, `catpin.css`, `smart-slicer.css`
-  types/                   → TypeScript interfaces (`models.ts`, `catpinMultiParts.ts`, `plateTypes.ts`)
+  hooks/                   → Custom React hooks (`useLibrary.ts`, `useCatalogItems.ts`, `useSlicerSettings.ts`, `useWebTabs.ts`)
+  styles/                  → `design-system.css`, `app.css`, `inspector.css`, `catpin.css`, `smart-slicer.css`, `web-tabs.css`
+  types/                   → TypeScript interfaces (`models.ts`, `thumbCache.ts`, `catpinMultiParts.ts`, `plateTypes.ts`, `webTabs.ts`)
   utils/
     plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor, printerBedResolver
     catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, mirrorCutUtils, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
-    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbnailRenderer.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
-  workers/                 → `meshWorker.ts` (off-thread STL/OBJ parsing, mesh analysis & deduplication)
+    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbSessionStore.ts`, `thumbnailRenderer.ts`, `thumbPredecoder.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
+  workers/                 → `meshWorker.ts` (off-thread STL/OBJ/3MF thumbnail parsing, mesh analysis & deduplication)
 sample-library/            → Demo 3D objects folder for immediate testing
 
 ## Key Files
@@ -94,4 +100,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-15 (Refatoração GOLDCODE, sandbox Electron, Viewport Shading, Organizador de Mesa Anti-Suporte, .3MF multi-peças e Release v1.1.0)
+## Last updated: 2026-11-19 (Release v1.2.0: novo ícone do app, abas externas Chat/3D Generation, cache SSD WebP e indexador paralelo)

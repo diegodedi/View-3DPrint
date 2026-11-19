@@ -2,6 +2,8 @@ import React, { Suspense, useState, useCallback } from 'react';
 import { useLibrary } from './hooks/useLibrary';
 import { Header } from './components/Header';
 import { ObjectGrid } from './components/ObjectGrid';
+import { WebTabWorkspace } from './components/WebTabs/WebTabWorkspace';
+import type { WorkspaceTabId } from './types/webTabs';
 
 const DetailsPanel = React.lazy(() =>
   import('./components/DetailsPanel').then((m) => ({ default: m.DetailsPanel }))
@@ -38,9 +40,11 @@ export const App: React.FC = () => {
     launchConfiguredInSlicer,
     updateSettings,
     saveNotesAndThumb,
+    registerAutoThumbnailPath,
   } = useLibrary();
 
   const [isSlicerModalOpen, setIsSlicerModalOpen] = useState<boolean>(false);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceTabId>('viewer');
 
   const handleCaptureThumbnail = useCallback(
     (dataUrl: string) => {
@@ -51,10 +55,10 @@ export const App: React.FC = () => {
   );
 
   const handleAutoThumbnailGenerated = useCallback(
-    (folderPath: string, dataUrl: string) => {
-      saveNotesAndThumb(folderPath, { customThumbnail: dataUrl });
+    (folderPath: string, thumbnailPath: string) => {
+      registerAutoThumbnailPath(folderPath, thumbnailPath);
     },
-    [saveNotesAndThumb]
+    [registerAutoThumbnailPath]
   );
 
   const handleSaveNotes = useCallback(
@@ -72,8 +76,10 @@ export const App: React.FC = () => {
         totalCount={totalRootCount}
         categories={categories}
         activeCategory={activeCategory}
+        activeWorkspace={activeWorkspace}
         onSearchChange={setSearchQuery}
         onSelectCategory={setActiveCategory}
+        onSelectWorkspace={setActiveWorkspace}
         onSelectFolder={chooseFolder}
         onRefresh={refreshLibrary}
         onOpenSlicerModal={() => setIsSlicerModalOpen(true)}
@@ -95,13 +101,20 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      <ObjectGrid
-        items={items}
-        isLoading={isLoading}
-        onSelect={setSelectedId}
-        onQuickSlice={launchInSlicer}
-        onSelectFolder={chooseFolder}
-        onAutoThumbnailGenerated={handleAutoThumbnailGenerated}
+      <div className={activeWorkspace === 'viewer' ? 'workspace-viewer-pane' : 'workspace-hidden'}>
+        <ObjectGrid
+          items={items}
+          isLoading={isLoading}
+          onSelect={setSelectedId}
+          onQuickSlice={launchInSlicer}
+          onSelectFolder={chooseFolder}
+          onAutoThumbnailGenerated={handleAutoThumbnailGenerated}
+        />
+      </div>
+
+      <WebTabWorkspace
+        activeTab={activeWorkspace === 'viewer' ? null : activeWorkspace}
+        isSuspended={isSlicerModalOpen || Boolean(selectedItem)}
       />
 
       <Suspense fallback={null}>

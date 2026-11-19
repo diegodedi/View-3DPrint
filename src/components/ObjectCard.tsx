@@ -1,91 +1,58 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, Layers, Cuboid, FolderOpen } from 'lucide-react';
 import type { PrintObjectItem } from '../types/models';
 import { formatFileSize } from '../utils/formatters';
-import { renderBufferToThumbnailDataUrlAsync } from '../utils/thumbnailRenderer';
-import { enqueueThumbnailJob } from '../utils/thumbnailQueue';
+import { buildLocalAssetUrl } from '../utils/thumbPredecoder';
+import {
+  deprioritizeThumbnailKey,
+  getCachedGeneratedThumbnail,
+  prioritizeThumbnailItem,
+  subscribeThumbnailReady,
+} from '../utils/thumbnailQueue';
 
 interface ObjectCardProps {
   item: PrintObjectItem;
   onSelect: (id: string) => void;
   onQuickSlice: (modelPath: string) => void;
-  onAutoThumbnailGenerated: (folderPath: string, dataUrl: string) => void;
-}
-
-function buildLocalAssetUrl(thumbnailPath: string, version: number): string {
-  return `local-asset://thumb?path=${encodeURIComponent(thumbnailPath)}&v=${version}`;
 }
 
 /**
- * MakerWorld-style asset card with lazy viewport intersection and queued MatCap 3D thumbnail rendering.
+ * MakerWorld-style asset card backed by centralized WebP SSD cache and non-discarding priority indexer.
  */
 const ObjectCardComponent: React.FC<ObjectCardProps> = ({
   item,
   onSelect,
   onQuickSlice,
-  onAutoThumbnailGenerated,
 }) => {
-  const cardRef = useRef<HTMLElement | null>(null);
-  const [isVisible, setIsVisible] = useState<boolean>(false);
-  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(() =>
+    getCachedGeneratedThumbnail(item.folderPath)
+  );
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const primaryModel = item.models[0];
 
-  const thumbSrc = item.thumbnailPath
-    ? (fallbackUrl || buildLocalAssetUrl(item.thumbnailPath, item.updatedAt))
-    : generatedUrl;
+  const thumbSrc =
+    resolvedUrl ||
+    fallbackUrl ||
+    (item.thumbnailPath ? buildLocalAssetUrl(item.thumbnailPath, item.updatedAt) : null);
 
   useEffect(() => {
     setFallbackUrl(null);
-  }, [item.thumbnailPath, item.updatedAt]);
+    setResolvedUrl(getCachedGeneratedThumbnail(item.folderPath));
+  }, [item.folderPath, item.thumbnailPath, item.updatedAt]);
 
   useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setIsVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '240px' }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+    return subscribeThumbnailReady(item.folderPath, (url) => {
+      setResolvedUrl(url);
+    });
+  }, [item.folderPath]);
 
   useEffect(() => {
-    if (!isVisible || item.thumbnailPath || !primaryModel || !window.electronAPI) return;
-    let active = true;
-
-    async function generateThumb() {
-      try {
-        setIsGenerating(true);
-        const dataUrl = await enqueueThumbnailJob(async () => {
-          if (!active || !window.electronAPI) return '';
-          const buffer = await window.electronAPI.readModelBuffer(primaryModel.path);
-          if (!active) return '';
-          return renderBufferToThumbnailDataUrlAsync(buffer, primaryModel.extension);
-        });
-
-        if (active && dataUrl) {
-          setGeneratedUrl(dataUrl);
-          onAutoThumbnailGenerated(item.folderPath, dataUrl);
-        }
-      } catch {
-        if (active) setGeneratedUrl(null);
-      } finally {
-        if (active) setIsGenerating(false);
-      }
-    }
-
-    generateThumb();
+    if (thumbSrc || !primaryModel || !window.electronAPI) return;
+    prioritizeThumbnailItem(item);
     return () => {
-      active = false;
+      deprioritizeThumbnailKey(item.folderPath);
     };
-  }, [isVisible, item.thumbnailPath, item.folderPath, primaryModel, onAutoThumbnailGenerated]);
+  }, [thumbSrc, item, primaryModel]);
 
   const handleImgError = async () => {
     if (!item.thumbnailPath || fallbackUrl || !window.electronAPI) return;
@@ -95,7 +62,6 @@ const ObjectCardComponent: React.FC<ObjectCardProps> = ({
 
   return (
     <article
-      ref={cardRef}
       className="maker-card"
       onClick={() => onSelect(item.id)}
       role="button"
@@ -114,7 +80,6 @@ const ObjectCardComponent: React.FC<ObjectCardProps> = ({
             src={thumbSrc}
             alt={`Visualização 3D de ${item.name}`}
             className="maker-thumb-img"
-            loading="lazy"
             decoding="async"
             width={280}
             height={185}
@@ -123,9 +88,7 @@ const ObjectCardComponent: React.FC<ObjectCardProps> = ({
         ) : (
           <div className="maker-thumb-empty">
             <Cuboid size={36} color="var(--color-text-muted)" />
-            <span className="maker-thumb-hint">
-              {isGenerating ? 'Renderizando MatCap...' : 'Aguardando fila...'}
-            </span>
+            <span className="maker-thumb-hint">Preparando miniatura...</span>
           </div>
         )}
 

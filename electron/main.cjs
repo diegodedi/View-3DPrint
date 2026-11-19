@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { registerLocalAssetScheme, registerLocalAssetProtocol } = require('./localAssetProtocol.cjs');
-const { scanLibraryFolderAsync, saveFolderMetadata } = require('./scanner.cjs');
+const { scanLibraryFolderAsync, saveFolderMetadata, readCachedLibraryItems } = require('./scanner.cjs');
 const {
   loadAppSettings,
   saveAppSettings,
@@ -21,7 +21,8 @@ const {
   diagnoseCatpinModelForUi,
 } = require('./catpin/index.cjs');
 const { initAutoUpdater, checkForUpdates } = require('./updater.cjs');
-
+const { registerWebTabsIpc } = require('./webTabsService.cjs');
+const { registerThumbCacheIpc } = require('./thumbCache.cjs');
 let mainWindow = null;
 
 registerLocalAssetScheme();
@@ -39,7 +40,7 @@ function createMainWindow() {
     title: 'View 3DPrint — Asset Browser 3D',
     backgroundColor: '#121212',
     autoHideMenuBar: true,
-    show: true,
+    icon: path.join(__dirname, 'assets', 'icon.png'), show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -79,6 +80,13 @@ function registerIpcHandlers() {
       activeSlicer ? activeSlicer.executablePath : null,
       settings.crealityPrinter
     );
+    const cachedItems = await readCachedLibraryItems(settings.libraryPath, cacheDir);
+    if (cachedItems.length > 0) {
+      setImmediate(() => {
+        scanLibraryFolderAsync(settings.libraryPath, { cacheDir }).catch(() => {});
+      });
+      return { settings, items: cachedItems, crealityCatalog };
+    }
     const items = await scanLibraryFolderAsync(settings.libraryPath, { cacheDir });
     return { settings, items, crealityCatalog };
   });
@@ -167,7 +175,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('app:save-object-metadata', (_event, { folderPath, metadata }) => {
-    return saveFolderMetadata(folderPath, metadata);
+    return saveFolderMetadata(folderPath, metadata, cacheDir);
   });
 
   ipcMain.handle('app:save-catpin-files', async (_event, { targetFolder, defaultPath, files, openFolderAfter = true }) => {
@@ -276,6 +284,8 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   registerLocalAssetProtocol();
   registerIpcHandlers();
+  registerThumbCacheIpc(app.getPath('userData'));
+  registerWebTabsIpc(() => mainWindow);
   createMainWindow();
   initAutoUpdater(mainWindow);
 

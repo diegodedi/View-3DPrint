@@ -1,8 +1,12 @@
+import type { WebTabsBridgeAPI } from './webTabs';
+import type { ThumbCacheBridgeAPI } from './thumbCache';
+
 export interface ModelFileEntry {
   name: string;
   path: string;
   extension: string;
   sizeBytes: number;
+  mtimeMs?: number;
 }
 
 export interface PrintObjectItem {
@@ -16,6 +20,7 @@ export interface PrintObjectItem {
   notes: string;
   tags: string[];
   thumbnailPath: string | null;
+  thumbCacheKey?: string;
   models: ModelFileEntry[];
   updatedAt: number;
 }
@@ -284,6 +289,8 @@ export interface ElectronBridgeAPI {
     bedDepthMm?: number;
   }) => Promise<{ mode: string; path: string }>;
   checkForUpdates?: () => Promise<boolean>;
+  thumbCache?: ThumbCacheBridgeAPI;
+  webTabs?: WebTabsBridgeAPI;
 }
 
 declare global {
