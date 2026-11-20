@@ -6,7 +6,7 @@
 //    sem caixas com relevo e sem cilindros projetados (Regra CatPin Anti-Cilindro)
 //  - Extrusão de detalhe (detail): Plug raso no plano da câmera
 // =============================================================================
-import { norm, frameFromZ, sub, add, mul, dot, len } from './algebra.mjs';
+import { norm, frameFromZ, invRigid, sub, add, mul, dot, len } from './algebra.mjs';
 import { CatpinError, buildModel } from './meshDiagnostics.mjs';
 
 export function ensureCCW(poly) {
@@ -26,6 +26,18 @@ function bboxDistToPoint(bb, pt) {
   return Math.hypot(dx, dy, dz);
 }
 
+function computePolygonSpanUV(poly, fallbackSpan) {
+  if (!poly || poly.length < 2) return fallbackSpan;
+  let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+  for (const p of poly) {
+    if (p[0] < minU) minU = p[0];
+    if (p[0] > maxU) maxU = p[0];
+    if (p[1] < minV) minV = p[1];
+    if (p[1] > maxV) maxV = p[1];
+  }
+  return Math.max(maxU - minU, maxV - minV, 1e-4);
+}
+
 /**
  * Executa o Corte de Membro (Seam Cut) usando a Lâmina Tridimensional Conforme à Polyline.
  * Respeita 100% a Regra Anti-Cilindro (zero extrusão em Z de comprimento S) e elimina
@@ -38,9 +50,12 @@ export function executeSeamBladeCut(wasm, model, options) {
   const { CrossSection, Manifold } = wasm;
   const cutRef = cut.point;
   const g = Math.min(Math.max(gapMm ?? 0, 0), 3);
-  const hBlade = Math.max(g, 0.08);
 
   const bb = model.boundingBox();
+  const modelDiag = Math.max(len(sub(bb.max, bb.min)), 1e-4);
+  const loopSpan = computePolygonSpanUV(cut.polygonUV, modelDiag * 0.25);
+  const minBlade = Math.min(0.08, Math.max(loopSpan * 0.004, 1e-4));
+  const hBlade = Math.max(g, minBlade);
   const modelCenter = [
     (bb.min[0] + bb.max[0]) / 2,
     (bb.min[1] + bb.max[1]) / 2,
@@ -48,61 +63,98 @@ export function executeSeamBladeCut(wasm, model, options) {
   ];
   let nDir = norm(cut.normal);
   const outward = norm(sub(cutRef, modelCenter));
-  if (len(outward) > 1e-4 && dot(nDir, outward) < 0) {
+  if (!cut.flipSide && len(outward) > 1e-4 && dot(nDir, outward) < 0) {
     nDir = mul(nDir, -1);
   }
 
   const basis = cut.basis && cut.basis.length === 16 ? cut.basis : frameFromZ(nDir, cutRef);
-  const minValidVol = Math.min(0.35, Math.max(0.01, model.volume() * 1e-4));
+  const modelVol = Math.abs(model.volume());
+  const minValidVol = Math.min(0.35, Math.max(1e-7, modelVol * 1e-4));
+  const bigVol = Math.max(minValidVol, modelVol * 5e-3);
 
-  // Diagnóstico de componentes pré-existentes (apenas positivos: volumes negativos são cavidades internas)
+  // Diagnóstico de componentes e genus pré-existentes (alças fechadas possuem genus >= 1)
+  const initialGenus = model.genus();
   const initialComps = model.decompose().filter((c) => c.volume() >= minValidVol);
   const initialCount = initialComps.length;
+  const initBigCount = initialComps.filter((c) => c.volume() >= bigVol).length;
   for (const c of initialComps) c.delete();
 
+  const didSeparate = (comps) => {
+    if (comps.length > initialCount) return true;
+    return initialCount > 1 && comps.filter((c) => c.volume() >= bigVol).length > initBigCount;
+  };
+
   let rawComps = null;
+  let severedClosedLoop = false;
 
   // FASE 1: Seccionamento por Lâmina 3D Conforme Fina (Z = 0, espessura hBlade)
-  // Subtrai a fenda fina 3D diretamente na junta traçada pela polyline.
-  // Regra Anti-Cilindro: ZERO extrusão em Z, ZERO intersect com volume prismático.
+  // Escala apenas em UV (mantendo Z=1 e curvatura w(u,v) intacta — Regra Anti-Cilindro).
   if (cut.bladeMesh && cut.bladeMesh.positions && cut.bladeMesh.indices) {
+    let blade3D = null;
+    let bladeLocal = null;
     try {
-      const blade3D = buildModel(wasm, cut.bladeMesh.positions, cut.bladeMesh.indices);
-      if (blade3D && blade3D.status() === 'NoError' && blade3D.volume() > 1e-6) {
-        const subRes = model.subtract(blade3D);
-        blade3D.delete();
-        const comps = subRes.decompose().filter((c) => c.volume() >= minValidVol);
-        subRes.delete();
-        if (comps.length > initialCount) {
-          rawComps = comps;
-        } else {
+      blade3D = buildModel(wasm, cut.bladeMesh.positions, cut.bladeMesh.indices);
+      if (blade3D && blade3D.status() === 'NoError' && blade3D.volume() > 1e-9) {
+        bladeLocal = blade3D.transform(invRigid(basis));
+        const lBb = bladeLocal.boundingBox();
+        const cu = (lBb.min[0] + lBb.max[0]) * 0.5;
+        const cv = (lBb.min[1] + lBb.max[1]) * 0.5;
+        const uvScales = [1.0, 1.08, 1.18, 1.32, 1.5];
+
+        for (const s of uvScales) {
+          let candidate = blade3D;
+          if (s > 1.0) {
+            const shifted = bladeLocal.translate([-cu, -cv, 0]);
+            const scaled = shifted.scale([s, s, 1]);
+            const restored = scaled.translate([cu, cv, 0]);
+            candidate = restored.transform(basis);
+            shifted.delete();
+            scaled.delete();
+            restored.delete();
+          }
+          const subRes = model.subtract(candidate);
+          if (candidate !== blade3D) candidate.delete();
+
+          const comps = subRes.decompose().filter((c) => c.volume() >= minValidVol);
+          if (didSeparate(comps)) {
+            subRes.delete();
+            rawComps = comps;
+            break;
+          }
+          if (initialGenus >= 1 && comps.length === initialCount) {
+            const gAfter = subRes.genus();
+            if (gAfter >= 0 && gAfter < initialGenus) severedClosedLoop = true;
+          }
           for (const c of comps) c.delete();
+          subRes.delete();
         }
-      } else if (blade3D) {
-        blade3D.delete();
       }
     } catch {
       // Continua para contingência da lâmina 2D caso a malha 3D falhe
+    } finally {
+      if (bladeLocal) bladeLocal.delete();
+      if (blade3D) blade3D.delete();
     }
   }
 
   // FASE 2: Se a lâmina 3D não separou, opera com Lâmina seccionadora delimitada ao contorno da junta
   // Regra Anti-Cilindro: Lâmina fina em Z=0 (espessura hBlade), zero extrusão prismática em Z e
-  // micro-offsets estritamente limitados ao perímetro local (max 2.0mm) para prevenir decepações
+  // micro-offsets proporcionais ao diâmetro local do contorno.
   if (!rawComps) {
     if (!cut.polygonUV || cut.polygonUV.length < 3) {
       throw new CatpinError('CUTTER_INVALID', 'O contorno de corte precisa de pelo menos 3 pontos.');
     }
 
     const cs = CrossSection.ofPolygons([ensureCCW(cut.polygonUV)], 'NonZero');
-    if (cs.isEmpty() || cs.area() < 1e-4) {
+    if (cs.isEmpty() || cs.area() < 1e-8) {
       cs.delete();
       throw new CatpinError('CUTTER_INVALID', 'Contorno de corte do membro inválido.');
     }
 
     const effBladeThick = hBlade;
-    const microOffsets = [0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.5, 6.0, 8.0];
-    for (const r of microOffsets) {
+    const offsetRatios = [0, 0.025, 0.05, 0.08, 0.12, 0.18, 0.26, 0.36, 0.5];
+    for (const ratio of offsetRatios) {
+      const r = ratio * loopSpan;
       const blade2D = r > 0 ? cs.offset(r, 'Round', 16) : cs;
       const rawBlade = Manifold.extrude(blade2D, effBladeThick, 0, 0, [1, 1], true);
       const worldBlade = rawBlade.transform(basis);
@@ -113,19 +165,22 @@ export function executeSeamBladeCut(wasm, model, options) {
       if (r > 0) blade2D.delete();
       worldBlade.delete();
 
-      if (comps.length > initialCount) {
+      if (didSeparate(comps)) {
         subRes.delete();
         rawComps = comps;
         break;
-      } else {
-        for (const c of comps) c.delete();
-        subRes.delete();
       }
+      if (initialGenus >= 1 && comps.length === initialCount) {
+        const gAfter = subRes.genus();
+        if (gAfter >= 0 && gAfter < initialGenus) severedClosedLoop = true;
+      }
+      for (const c of comps) c.delete();
+      subRes.delete();
     }
     cs.delete();
   }
 
-  if (rawComps && rawComps.length > initialCount) {
+  if (rawComps && rawComps.length >= 2) {
     const sorted = [...rawComps].sort((a, b) => b.volume() - a.volume());
     let bestLimbIdx = 1;
     let bestLimbScore = -Infinity;
@@ -147,10 +202,22 @@ export function executeSeamBladeCut(wasm, model, options) {
       }
     }
 
-    const partB = sorted[bestLimbIdx];
+    const limbPart = sorted[bestLimbIdx];
     const bodyParts = sorted.filter((_, idx) => idx !== bestLimbIdx);
-    const partA = bodyParts.length > 1 ? Manifold.union(bodyParts) : bodyParts[0];
+    const bodyPart = bodyParts.length > 1 ? Manifold.union(bodyParts) : bodyParts[0];
+    if (bodyParts.length > 1) {
+      for (const bp of bodyParts) bp.delete();
+    }
+    const partA = cut.flipSide ? limbPart : bodyPart;
+    const partB = cut.flipSide ? bodyPart : limbPart;
     return { partA, partB, actualCutPoint: cutRef, actualCutNormal: nDir };
+  }
+
+  if (severedClosedLoop) {
+    throw new CatpinError(
+      'CUT_CLOSED_LOOP',
+      'O corte atravessou a junta por completo, mas o membro continua preso ao restante do modelo por outro ponto (ex.: base comum, mão encostada no corpo, capa ou acessório). Separe primeiro esse outro ponto de contato antes de destacar este membro.'
+    );
   }
 
   throw new CatpinError('CUT_MISSES_MODEL', 'O contorno de corte não dividiu o membro em duas partes. Certifique-se de desenhar um laço fechado que contorne a junta do membro por completo.');

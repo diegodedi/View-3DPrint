@@ -90,6 +90,23 @@ export function selectOptimalSeamBasis(
   return { xAxis, yAxis, zAxis: initialZ };
 }
 
+function offsetPolygonOutward2D(rawUV: THREE.Vector2[], dist: number): THREE.Vector2[] {
+  const m = rawUV.length;
+  if (dist <= 0 || m < 3) return rawUV.map((p) => p.clone());
+  return rawUV.map((cur, i) => {
+    const prev = rawUV[(i - 1 + m) % m], next = rawUV[(i + 1) % m];
+    const e1x = cur.x - prev.x, e1y = cur.y - prev.y;
+    const e2x = next.x - cur.x, e2y = next.y - cur.y;
+    const l1 = Math.hypot(e1x, e1y) || 1, l2 = Math.hypot(e2x, e2y) || 1;
+    const n1x = e1y / l1, n1y = -e1x / l1, n2x = e2y / l2, n2y = -e2x / l2;
+    const bxRaw = n1x + n2x, byRaw = n1y + n2y, bLen = Math.hypot(bxRaw, byRaw);
+    const bx = bLen > 1e-4 ? bxRaw / bLen : n2x;
+    const by = bLen > 1e-4 ? byRaw / bLen : n2y;
+    const miter = Math.min(2.0, 1 / Math.max(0.5, bx * n2x + by * n2y));
+    return new THREE.Vector2(cur.x + bx * dist * miter, cur.y + by * dist * miter);
+  });
+}
+
 /**
  * Constrói a geometria 3D deformada (Membrana Harmônica Mínima) cuja borda passa 100%
  * pelos pontos 3D da Polyline e cujo interior se deforma suavemente em 3D.
@@ -120,10 +137,17 @@ export function buildDeformedSeamGeometry(
     const u = rel.dot(xAxis);
     const v = rel.dot(yAxis);
     const w = rel.dot(zAxis);
+    if (rawUV.length > 0 && Math.hypot(u - rawUV[rawUV.length - 1].x, v - rawUV[rawUV.length - 1].y) < 1e-5) {
+      continue;
+    }
     if (w < minZ) minZ = w;
     if (w > maxZ) maxZ = w;
     rawUV.push(new THREE.Vector2(u, v));
     rawW.push(w);
+  }
+  if (rawUV.length > 3 && rawUV[0].distanceTo(rawUV[rawUV.length - 1]) < 1e-5) {
+    rawUV.pop();
+    rawW.pop();
   }
 
   if (rawUV.length >= 3 && THREE.ShapeUtils.isClockWise(rawUV)) {
@@ -137,22 +161,23 @@ export function buildDeformedSeamGeometry(
   cu /= Math.max(M, 1);
   cv /= Math.max(M, 1);
 
-  // Saia perimetral coplanar (UV): expande sutilmente na tangente do corte sem alterar W (zero invasão em Z)
-  const skirtUV: THREE.Vector2[] = [];
-  for (let i = 0; i < M; i++) {
-    const du = rawUV[i].x - cu;
-    const dv = rawUV[i].y - cv;
-    const dLen = Math.hypot(du, dv);
-    const ndu = dLen > 1e-4 ? du / dLen : 1;
-    const ndv = dLen > 1e-4 ? dv / dLen : 0;
-    skirtUV.push(new THREE.Vector2(rawUV[i].x + ndu * skirtMm, rawUV[i].y + ndv * skirtMm));
+  // Saia perimetral coplanar pela normal externa das arestas (segura para contornos côncavos)
+  let skirtUV = offsetPolygonOutward2D(rawUV, skirtMm);
+  if (skirtMm > 0 && hasSelfIntersection2D(skirtUV)) {
+    for (const f of [0.5, 0.25, 0.1, 0]) {
+      const cand = offsetPolygonOutward2D(rawUV, skirtMm * f);
+      if (!hasSelfIntersection2D(cand) || f === 0) {
+        skirtUV = cand;
+        break;
+      }
+    }
   }
 
   const verts2D: Array<[number, number]> = skirtUV.map((p) => [p.x, p.y]);
   let tris: Array<[number, number, number]> = [];
 
   if (!hasSelfIntersection2D(skirtUV)) {
-    const rawTris = THREE.ShapeUtils.triangulateShape(skirtUV, []);
+    const rawTris = THREE.ShapeUtils.triangulateShape(skirtUV.map((p) => p.clone()), []);
     tris = rawTris.map((t) => [t[0], t[1], t[2]]);
   }
 
@@ -163,11 +188,11 @@ export function buildDeformedSeamGeometry(
     for (let i = 0; i < M; i++) tris.push([i, (i + 1) % M, centerIdx]);
   }
 
-  let span = 10;
+  let span = 0;
   for (let i = 0; i < M; i++) {
-    span = Math.max(span, Math.hypot(verts2D[i][0], verts2D[i][1]) * 2);
+    span = Math.max(span, Math.hypot(verts2D[i][0] - cu, verts2D[i][1] - cv) * 2);
   }
-  const maxEdgeLen = Math.max(1.5, span / 7.5);
+  const maxEdgeLen = Math.max(1e-4, span / 7.5);
 
   for (let step = 0; step < 96; step++) {
     const edgeMap = new Map<string, Array<{ ti: number; e: number; u: number; v: number }>>();
@@ -203,11 +228,12 @@ export function buildDeformedSeamGeometry(
   const N = verts2D.length;
   const vertsW = new Float64Array(N);
   for (let i = 0; i < M; i++) vertsW[i] = rawW[i];
+  const idwEps = Math.max(1e-8, (span * 0.01) ** 2);
   for (let i = M; i < N; i++) {
     const [ux, uy] = verts2D[i];
     let num = 0, den = 0;
     for (let k = 0; k < M; k++) {
-      const d2 = (ux - verts2D[k][0]) ** 2 + (uy - verts2D[k][1]) ** 2 + 0.05;
+      const d2 = (ux - verts2D[k][0]) ** 2 + (uy - verts2D[k][1]) ** 2 + idwEps;
       const wt = 1 / (d2 * d2);
       num += wt * rawW[k];
       den += wt;

@@ -19,6 +19,7 @@ export interface CutPoint3D2D {
   x: number;
   y: number;
   surfaceNormal?: THREE.Vector3;
+  isOccluded?: boolean;
 }
 
 export function computeCentroid(points: THREE.Vector3[]): THREE.Vector3 {
@@ -111,6 +112,7 @@ export function buildSeamCutterMesh(
   });
 
   cutterMesh.userData.cutterKind = 'seam';
+  cutterMesh.userData.flipSide = flipSide;
   cutterMesh.userData.planePoint = centroid;
   cutterMesh.userData.planeNormal = zAxis;
   cutterMesh.userData.boundary3D = rawBoundary3D;

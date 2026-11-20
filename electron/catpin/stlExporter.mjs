@@ -42,7 +42,7 @@ export function encodeBinaryStl(positions, indices) {
  */
 export function extractPart(m) {
   const rawComps = m.decompose();
-  const minVol = Math.min(0.25, Math.max(0.01, Math.abs(m.volume()) * 1e-4));
+  const minVol = Math.min(0.25, Math.max(1e-7, Math.abs(m.volume()) * 1e-4));
   const comps = rawComps.filter(c => Math.abs(c.volume()) >= minVol);
   const cleanM = (comps.length > 0 && comps.length < rawComps.length)
     ? comps.reduce((acc, c) => acc.add(c))

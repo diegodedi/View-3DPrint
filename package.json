@@ -1,6 +1,6 @@
 {
   "name": "view-3dprint",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Visualizador e organizador de objetos 3D para impressao com abertura em 1 clique no fatiador Creality Print",
   "main": "electron/main.cjs",
   "author": "DieTools",

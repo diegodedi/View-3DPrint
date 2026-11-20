@@ -60,6 +60,7 @@ export const CatPinOverlay2D: React.FC<CatPinOverlay2DProps> = ({
   const firstPt = points[0];
   const isNearFirstPoint =
     !isLoopClosed &&
+    !firstPt.isOccluded &&
     points.length >= 3 &&
     cursorPos !== null &&
     Math.hypot(cursorPos.x - firstPt.x, cursorPos.y - firstPt.y) < 12;
@@ -127,26 +128,32 @@ export const CatPinOverlay2D: React.FC<CatPinOverlay2DProps> = ({
       )}
 
       {points.map((pt, idx) => {
-        const nodeClass =
-          idx === 0 && !isLoopClosed && points.length >= 3
+        const occluded = Boolean(pt.isOccluded) && draggingIndex !== idx;
+        const canCloseOnFirst = idx === 0 && !isLoopClosed && !occluded && points.length >= 3;
+        const nodeClass = occluded
+          ? undefined
+          : canCloseOnFirst
             ? 'catpin-overlay-node-pointer'
             : draggingIndex === idx
-            ? 'catpin-overlay-node-grabbing'
-            : 'catpin-overlay-node';
+              ? 'catpin-overlay-node-grabbing'
+              : 'catpin-overlay-node';
 
         return (
           <circle
             key={idx}
             cx={pt.x}
             cy={pt.y}
-            r={draggingIndex === idx ? 8 : idx === 0 && !isLoopClosed && points.length >= 3 ? 7 : 6}
+            r={draggingIndex === idx ? 8 : canCloseOnFirst ? 7 : 6}
             fill="var(--color-overlay-line)"
             stroke="var(--color-overlay-node-stroke)"
             strokeWidth={2}
+            opacity={occluded ? 0.32 : 1}
+            pointerEvents={occluded ? 'none' : undefined}
             className={nodeClass}
             onPointerDown={(e) => {
+              if (occluded) return;
               e.stopPropagation();
-              if (idx === 0 && !isLoopClosed && points.length >= 3) {
+              if (canCloseOnFirst) {
                 onCloseLoop();
                 return;
               }

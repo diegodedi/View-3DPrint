@@ -33,7 +33,8 @@ export function executeCut(wasm, input) {
   const g = Math.min(Math.max(input.cutGapMm ?? 0, 0), 3);
   const warnings = [];
   let model = buildModel(wasm, input.positions, input.indices);
-  const initialSolids = model.decompose().filter(c => Math.abs(c.volume()) >= 0.01);
+  const initMinVol = Math.min(0.01, Math.max(1e-7, Math.abs(model.volume()) * 1e-4));
+  const initialSolids = model.decompose().filter(c => Math.abs(c.volume()) >= initMinVol);
   if (initialSolids.length > 1) {
     const united = wasm.Manifold.union(initialSolids);
     model.delete();

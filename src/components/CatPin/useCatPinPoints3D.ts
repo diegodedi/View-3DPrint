@@ -75,8 +75,8 @@ export function useCatPinPoints3D({
         return null;
       }
 
-      // No modo corte de membro (seam), novos pontos precisam ancorar estritamente na superfície do modelo
-      if (toolMode === 'seam' && !refWorldPoint) {
+      // No modo corte de membro (seam), pontos precisam ancorar estritamente na superfície do modelo (inclusive ao arrastar)
+      if (toolMode === 'seam') {
         return null;
       }
 
@@ -87,7 +87,7 @@ export function useCatPinPoints3D({
       const hit = new THREE.Vector3();
       return raycaster.ray.intersectPlane(fallbackPlane, hit) ? { point: hit } : null;
     },
-    [cameraRef, rendererRef, mainMeshRef, modelBoxRef, cutPoints]
+    [cameraRef, rendererRef, mainMeshRef, modelBoxRef, cutPoints, toolMode]
   );
 
   // Atualiza a cena quando os vértices da polyline mudam (sem esferas 3D grandes; os vértices são renderizados no CatPinOverlay2D)
@@ -147,6 +147,7 @@ export function useCatPinPoints3D({
           x,
           y,
           surfaceNormal: hit.normal ?? current.surfaceNormal,
+          isOccluded: false,
         };
         return next;
       });
@@ -183,9 +184,10 @@ export function useCatPinPoints3D({
 
     if (toolMode === 'straight' || isLoopClosed) return;
 
-    // Se clicar a menos de 12px do 1º ponto (quando já houver >= 3 pontos), fecha o loop
+    // Se clicar a menos de 12px do 1º ponto visível (não ocluído do outro lado da peça), fecha o loop
     if (
       cutPoints.length >= 3 &&
+      !cutPoints[0].isOccluded &&
       Math.hypot(upX - cutPoints[0].x, upY - cutPoints[0].y) < 12
     ) {
       onCloseLoop();
@@ -194,10 +196,15 @@ export function useCatPinPoints3D({
 
     const hit = raycastCanvasPointTo3D(upX, upY);
     if (hit) {
-      onUpdateCutPoints((prev) => [
-        ...prev,
-        { worldPos: hit.point, x: upX, y: upY, surfaceNormal: hit.normal },
-      ]);
+      onUpdateCutPoints((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1].worldPos.distanceToSquared(hit.point) < 1e-6) {
+          return prev;
+        }
+        return [
+          ...prev,
+          { worldPos: hit.point, x: upX, y: upY, surfaceNormal: hit.normal, isOccluded: false },
+        ];
+      });
     }
   };
 

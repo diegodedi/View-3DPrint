@@ -51,13 +51,19 @@ export function buildCutSpecModel(
     const cutterToModel = new THREE.Matrix4().multiplyMatrices(inv, cutterMesh.matrixWorld);
     const v = new THREE.Vector3();
     const g = Math.min(Math.max(_cutGapMm ?? 0, 0), 3);
-    const hBlade = Math.max(g, 0.08);
+
+    let loopSpan = 0;
+    if (boundary3D && boundary3D.length >= 3 && seamCentroid) {
+      for (const p of boundary3D) loopSpan = Math.max(loopSpan, p.distanceTo(seamCentroid) * 2);
+    }
+    const minBlade = Math.min(0.08, Math.max(loopSpan * 0.004, 1e-4));
+    const hBlade = Math.max(g, minBlade);
 
     if (boundary3D && boundary3D.length >= 3 && seamCentroid && seamX && seamY && seamZ) {
       // REGRA CATPIN ANTI-CILINDRO: Lâmina 3D fina conforme à polyline em Z=0 (espessura hBlade).
-      // Saia tangencial UV de 3.0mm garante que a lâmina perfure 100% da casca externa ao redor
-      // de toda a junta sem deixar micro-pontes de malha, eliminando falhas de separação e degraus.
-      const CSG_BLADE_SKIRT_MM = 3.0;
+      // Saia inicial proporcional e justa ao diâmetro da junta evita danificar membros vizinhos próximos;
+      // o motor escalona em UV mantendo 100% da curvatura 3D se necessário.
+      const initialSkirt = Math.min(Math.max(loopSpan * 0.04, loopSpan * 0.015), 1.5);
       const geomBlade = buildDeformedSeamGeometry(
         boundary3D,
         seamCentroid,
@@ -65,7 +71,7 @@ export function buildCutSpecModel(
         seamY,
         seamZ,
         hBlade,
-        CSG_BLADE_SKIRT_MM
+        initialSkirt
       );
       const posAttr = geomBlade.geometry.attributes.position;
       const count = posAttr.count;
@@ -80,6 +86,7 @@ export function buildCutSpecModel(
         positions: bladePos,
         indices: Uint32Array.from(geomBlade.geometry.index!.array as ArrayLike<number>),
       };
+      geomBlade.geometry.dispose();
     } else {
       const geom = cutterMesh.geometry;
       if (geom && geom.attributes.position && geom.index) {
@@ -106,6 +113,7 @@ export function buildCutSpecModel(
       scale: spec2D.scale ?? [1.0, 1.0],
       wMin: spec2D.wMin,
       wMax: spec2D.wMax,
+      flipSide: Boolean(cutterMesh.userData.flipSide),
       bladeMesh,
     };
   }

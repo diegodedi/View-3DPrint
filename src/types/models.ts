@@ -140,11 +140,10 @@ export type CatpinCutSpec =
     scale?: [number, number];
     wMin?: number;
     wMax?: number;
+    flipSide?: boolean;
     bladeMesh?: {
       positions: Float32Array;
       indices: Uint32Array;
-      positionsA?: Float32Array;
-      indicesA?: Uint32Array;
     };
   }
   | { kind: 'extrude'; polygonUV: Array<[number, number]>; basis: number[]; wMin: number; wMax: number; scale?: [number, number]; point?: CatpinV3 };
