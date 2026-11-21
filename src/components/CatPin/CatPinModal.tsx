@@ -57,7 +57,7 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
 
   const {
     parts, activePart, selectedPartId, isSaving, canUndo, canRedo,
-    setSelectedPartId, initFromGeometry, applyCutResult, undo, redo,
+    setSelectedPartId, initFromGeometry, initFromParts, applyCutResult, undo, redo,
     togglePartVisibility, saveAllParts, saveSelectedPart,
   } = useCatPinMultiParts(modelName, onSavedParts, workingFolder);
 
@@ -89,12 +89,18 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
     meshesGetterRef,
   });
 
-  const { autonomousGeometry: _autonomousGeometry, multiMeshWarning: loaderWarning, activeGeometry } = useCatPinModelLoader({
+  const {
+    autonomousGeometry: _autonomousGeometry,
+    multiMeshWarning: loaderWarning,
+    loadError,
+    activeGeometry,
+  } = useCatPinModelLoader({
     isOpen,
     modelPath,
     sourceObject3D: sourceObject3D ?? undefined,
     activePart,
     initFromGeometry,
+    initFromParts,
     handleStartCutSelectedPart,
   });
 
@@ -147,7 +153,24 @@ export const CatPinModal: React.FC<CatPinModalProps> = ({
     onExitResult: () => setResult(null),
   });
 
-  if (!isOpen || !activeGeometry) return null;
+  if (!isOpen) return null;
+  if (!activeGeometry) {
+    if (!loadError) return null;
+    return (
+      <div className="catpin-backdrop" role="dialog" aria-modal="true" aria-label={`Erro ao abrir ${modelName}`}>
+        <div className="catpin-aside">
+          <div className="catpin-section-box">
+            <span className="catpin-section-title">Falha ao abrir modelo no CatPin</span>
+            <div className="catpin-error-banner" role="alert">{loadError}</div>
+            <button type="button" className="btn full-width-btn" onClick={onClose}>
+              <X size={16} aria-hidden="true" />
+              <span>Fechar</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="catpin-backdrop" role="dialog" aria-modal="true" aria-label={`CatPin Corte e Conectores — ${modelName}`}>

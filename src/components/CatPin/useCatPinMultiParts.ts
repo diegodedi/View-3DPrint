@@ -9,6 +9,35 @@ import {
   getPartColor,
 } from '../../types/catpinMultiParts';
 import { computeCreasedNormalsInPlace } from '../../utils/normalSmoother';
+import { encodeGeometryToBinaryStl } from '../../utils/geometryStlEncoder';
+
+export interface InitialCatPinPartInput {
+  name: string;
+  geometry: THREE.BufferGeometry;
+  stlBuffer?: ArrayBuffer;
+}
+
+function buildInitialCatPinPart(input: InitialCatPinPartInput, idx: number): CatPinPart {
+  const cloned = input.geometry.clone();
+  if (!cloned.attributes.aCavity) computeCreasedNormalsInPlace(cloned);
+  const pos = cloned.attributes.position;
+  const triCount = Math.round(cloned.index ? cloned.index.count / 3 : (pos ? pos.count / 3 : 0));
+  const stlBuffer = input.stlBuffer && input.stlBuffer.byteLength > 84
+    ? input.stlBuffer
+    : encodeGeometryToBinaryStl(cloned);
+  return {
+    id: idx === 0 ? 'part_root' : `part_root_${idx}`,
+    name: input.name,
+    geometry: cloned,
+    stlBuffer,
+    color: getPartColor(idx),
+    triangles: triCount,
+    volumeMm3: 0,
+    parentPartId: null,
+    cutLevel: 0,
+    visible: true,
+  };
+}
 
 /** Converte com segurança qualquer formato de buffer (Uint8Array, Buffer, ArrayBuffer) em ArrayBuffer */
 export function toArrayBuffer(buf: unknown): ArrayBuffer {
@@ -77,27 +106,11 @@ export function useCatPinMultiParts(
 
   const initFromGeometry = useCallback(
     (geom: THREE.BufferGeometry, rawBuffer?: ArrayBuffer) => {
-      const pos = geom.attributes.position;
-      const triCount = geom.index ? geom.index.count / 3 : (pos ? pos.count / 3 : 0);
       const cleanName = initialModelName.replace(/\.[^/.]+$/, '');
-
-      const clonedRoot = geom.clone();
-      if (!clonedRoot.attributes.aCavity) {
-        computeCreasedNormalsInPlace(clonedRoot);
-      }
-      const initialPart: CatPinPart = {
-        id: 'part_root',
-        name: `${cleanName} (Original)`,
-        geometry: clonedRoot,
-        stlBuffer: rawBuffer || new ArrayBuffer(0),
-        color: getPartColor(0),
-        triangles: triCount,
-        volumeMm3: 0,
-        parentPartId: null,
-        cutLevel: 0,
-        visible: true,
-      };
-
+      const initialPart = buildInitialCatPinPart(
+        { name: `${cleanName} (Original)`, geometry: geom, stlBuffer: rawBuffer },
+        0
+      );
       setParts([initialPart]);
       setSelectedPartId(initialPart.id);
       setUndoStack([]);
@@ -105,6 +118,19 @@ export function useCatPinMultiParts(
     },
     [initialModelName]
   );
+
+  const initFromParts = useCallback((inputParts: InitialCatPinPartInput[]) => {
+    if (inputParts.length === 0) return;
+    const built = inputParts.map((p, idx) => buildInitialCatPinPart(p, idx));
+    let primary = built[0];
+    for (const part of built) {
+      if (part.triangles > primary.triangles) primary = part;
+    }
+    setParts(built);
+    setSelectedPartId(primary.id);
+    setUndoStack([]);
+    setRedoStack([]);
+  }, []);
 
   const applyCutResult = useCallback(
     (targetPartId: string, cutResult: CatpinCutResult, mirrorCutResult?: CatpinCutResult | null) => {
@@ -139,52 +165,26 @@ export function useCatPinMultiParts(
         const trisB = cutResult.partBTriangles ?? (geomB.index ? geomB.index.count / 3 : geomB.attributes.position.count / 3);
 
         const partA: CatPinPart = {
-          id: `${targetPart.id}_A_${stamp}`,
-          name: `${baseName} · Peça A`,
-          geometry: geomA,
-          stlBuffer: bodyBuffer,
-          color: targetPart.color,
-          triangles: trisA,
-          volumeMm3: 0,
-          parentPartId: targetPart.id,
-          cutLevel: baseLevel,
-          visible: true,
-          explodeDir: targetPart.explodeDir,
+          id: `${targetPart.id}_A_${stamp}`, name: `${baseName} · Peça A`,
+          geometry: geomA, stlBuffer: bodyBuffer, color: targetPart.color,
+          triangles: trisA, volumeMm3: 0, parentPartId: targetPart.id,
+          cutLevel: baseLevel, visible: true, explodeDir: targetPart.explodeDir,
         };
-
         const partB: CatPinPart = {
-          id: `${targetPart.id}_B_${stamp}`,
-          name: `${baseName} · Peça B`,
-          geometry: geomB,
-          stlBuffer: cutResult.partBBuffer!,
-          color: getPartColor(prevParts.length),
-          triangles: trisB,
-          volumeMm3: 0,
-          parentPartId: targetPart.id,
-          cutLevel: baseLevel,
-          visible: true,
-          explodeDir: cutResult.explodeDirStl,
+          id: `${targetPart.id}_B_${stamp}`, name: `${baseName} · Peça B`,
+          geometry: geomB, stlBuffer: cutResult.partBBuffer!, color: getPartColor(prevParts.length),
+          triangles: trisB, volumeMm3: 0, parentPartId: targetPart.id,
+          cutLevel: baseLevel, visible: true, explodeDir: cutResult.explodeDirStl,
         };
-
         const createdParts: CatPinPart[] = [partA, partB];
-
         if (hasMirror && mirrorCutResult?.partBBuffer) {
           const geomC = parseStlToGeometry(mirrorCutResult.partBBuffer);
-          const trisC =
-            mirrorCutResult.partBTriangles ??
-            (geomC.index ? geomC.index.count / 3 : geomC.attributes.position.count / 3);
+          const trisC = mirrorCutResult.partBTriangles ?? (geomC.index ? geomC.index.count / 3 : geomC.attributes.position.count / 3);
           createdParts.push({
-            id: `${targetPart.id}_C_${stamp}`,
-            name: `${baseName} · Peça C (Mirror)`,
-            geometry: geomC,
-            stlBuffer: mirrorCutResult.partBBuffer,
-            color: getPartColor(prevParts.length + 1),
-            triangles: trisC,
-            volumeMm3: 0,
-            parentPartId: targetPart.id,
-            cutLevel: baseLevel,
-            visible: true,
-            explodeDir: mirrorCutResult.explodeDirStl,
+            id: `${targetPart.id}_C_${stamp}`, name: `${baseName} · Peça C (Mirror)`,
+            geometry: geomC, stlBuffer: mirrorCutResult.partBBuffer, color: getPartColor(prevParts.length + 1),
+            triangles: trisC, volumeMm3: 0, parentPartId: targetPart.id,
+            cutLevel: baseLevel, visible: true, explodeDir: mirrorCutResult.explodeDirStl,
           });
         }
 
@@ -282,7 +282,7 @@ export function useCatPinMultiParts(
   return {
     parts, activePart, selectedPartId, isSaving,
     canUndo: undoStack.length > 0, canRedo: redoStack.length > 0,
-    setSelectedPartId, initFromGeometry, applyCutResult, undo, redo,
+    setSelectedPartId, initFromGeometry, initFromParts, applyCutResult, undo, redo,
     togglePartVisibility, saveAllParts, saveSelectedPart,
   };
 }

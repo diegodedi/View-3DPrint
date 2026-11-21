@@ -52,8 +52,8 @@ src/
   utils/
     plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor, printerBedResolver
     catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, mirrorCutUtils, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
-    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbSessionStore.ts`, `thumbnailRenderer.ts`, `thumbPredecoder.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
-  workers/                 → `meshWorker.ts` (off-thread STL/OBJ/3MF thumbnail parsing, mesh analysis & deduplication)
+    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `threeMfParser.ts`, `geometryStlEncoder.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbSessionStore.ts`, `thumbnailRenderer.ts`, `thumbPredecoder.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
+  workers/                 → `meshWorker.ts` (off-thread STL/OBJ/3MF viewer + thumbnail parsing, mesh analysis & deduplication)
 sample-library/            → Demo 3D objects folder for immediate testing
 
 ## Key Files
@@ -100,4 +100,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-19 (Release v1.2.1: precisão da lâmina 3D CatPin, offset côncavo, detecção de loops fechados, flipSide e oclusão de nós)
+## Last updated: 2026-11-21 (Release v1.2.2: suporte universal 3MF Core + Production Extension p:path em Web Worker/Viewer3D e carregamento multi-peças isolado no CatPin com encoder STL binário)

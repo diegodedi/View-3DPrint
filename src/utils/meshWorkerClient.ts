@@ -123,7 +123,9 @@ function chunksToObject3D(chunks: ParsedGeometryChunk[]): THREE.Object3D {
     if (c.normals) geom.setAttribute('normal', new THREE.BufferAttribute(c.normals, 3));
     if (c.cavities) geom.setAttribute('aCavity', new THREE.BufferAttribute(c.cavities, 3));
     if (c.indices) geom.setIndex(new THREE.BufferAttribute(c.indices, 1));
-    return new THREE.Mesh(geom, mat);
+    const mesh = new THREE.Mesh(geom, mat);
+    if (c.name) mesh.name = c.name;
+    return mesh;
   }
 
   const group = new THREE.Group();
@@ -133,7 +135,9 @@ function chunksToObject3D(chunks: ParsedGeometryChunk[]): THREE.Object3D {
     if (c.normals) geom.setAttribute('normal', new THREE.BufferAttribute(c.normals, 3));
     if (c.cavities) geom.setAttribute('aCavity', new THREE.BufferAttribute(c.cavities, 3));
     if (c.indices) geom.setIndex(new THREE.BufferAttribute(c.indices, 1));
-    group.add(new THREE.Mesh(geom, mat));
+    const mesh = new THREE.Mesh(geom, mat);
+    if (c.name) mesh.name = c.name;
+    group.add(mesh);
   }
   return group;
 }
@@ -160,7 +164,7 @@ export async function parseModelBufferAsync(
   const ext = extension.toUpperCase();
   const mode: MeshParseMode = options.mode ?? 'viewer';
   const fallbackOptions = { skipCavity: mode === 'thumbnail' };
-  const canUseWorker = ext === 'STL' || ext === 'OBJ' || (ext === '3MF' && mode === 'thumbnail');
+  const canUseWorker = ext === 'STL' || ext === 'OBJ' || ext === '3MF';
 
   if (canUseWorker) {
     try {

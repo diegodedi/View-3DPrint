@@ -5,6 +5,7 @@ import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import type { BoundingBoxDimensions } from '../types/models';
 import { createGrayMatcapMaterial } from './matcapUtils';
 import { computeCreasedNormalsInPlace } from './normalSmoother';
+import { parse3mfBufferToObject3D } from './threeMfParser';
 
 let sharedThumbRenderer: THREE.WebGLRenderer | null = null;
 let sharedThumbScene: THREE.Scene | null = null;
@@ -103,8 +104,13 @@ export function parseModelBufferToMesh(
   }
 
   if (ext === '3MF') {
-    const loader = new ThreeMFLoader();
-    const group = loader.parse(safeBuffer);
+    let group: THREE.Object3D;
+    try {
+      group = parse3mfBufferToObject3D(safeBuffer);
+    } catch {
+      const loader = new ThreeMFLoader();
+      group = loader.parse(safeBuffer);
+    }
     applyGrayMatcapToObject(group, options);
     return group;
   }

@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
 import type { BoundingBoxDimensions } from '../types/models';
 import { analyzeRawMeshes, type RawMeshInput } from '../utils/meshAnalyzer';
 import { extractSerializedRawMeshes } from '../utils/meshExtractor';
 import { computeCreasedNormalsInPlace } from '../utils/normalSmoother';
+import { parse3mfBufferToParts } from '../utils/threeMfParser';
 
 export interface ParsedGeometryChunk {
+  name?: string;
   positions: Float32Array;
   normals: Float32Array | null;
   cavities: Float32Array | null;
@@ -59,54 +60,16 @@ function extractGeometryChunk(
   return { positions, normals, cavities, indices };
 }
 
-const MESH_BLOCK_RE = /<mesh\b[^>]*>([\s\S]*?)<\/mesh>/gi;
-const VERTEX_RE = /<vertex\b[^>]*\bx="([^"]+)"[^>]*\by="([^"]+)"[^>]*\bz="([^"]+)"/gi;
-const TRIANGLE_RE = /<triangle\b[^>]*\bv1="(\d+)"[^>]*\bv2="(\d+)"[^>]*\bv3="(\d+)"/gi;
-
-function parse3mfXmlMeshes(xmlText: string, mode: MeshParseMode): ParsedGeometryChunk[] {
+function parse3mfToChunks(buffer: ArrayBuffer, mode: MeshParseMode): ParsedGeometryChunk[] {
+  const parts = parse3mfBufferToParts(buffer);
   const chunks: ParsedGeometryChunk[] = [];
-  MESH_BLOCK_RE.lastIndex = 0;
-  let meshMatch: RegExpExecArray | null;
-
-  while ((meshMatch = MESH_BLOCK_RE.exec(xmlText)) !== null) {
-    const block = meshMatch[1];
-    const verts: number[] = [];
-    VERTEX_RE.lastIndex = 0;
-    let vMatch: RegExpExecArray | null;
-    while ((vMatch = VERTEX_RE.exec(block)) !== null) {
-      verts.push(Number(vMatch[1]), Number(vMatch[2]), Number(vMatch[3]));
-    }
-    if (verts.length < 9) continue;
-
-    const indices: number[] = [];
-    TRIANGLE_RE.lastIndex = 0;
-    let tMatch: RegExpExecArray | null;
-    while ((tMatch = TRIANGLE_RE.exec(block)) !== null) {
-      indices.push(Number(tMatch[1]), Number(tMatch[2]), Number(tMatch[3]));
-    }
-    if (indices.length < 3) continue;
-
+  for (const part of parts) {
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
-    geom.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+    geom.setAttribute('position', new THREE.BufferAttribute(part.positions, 3));
+    geom.setIndex(new THREE.BufferAttribute(part.indices, 1));
     const chunk = extractGeometryChunk(geom, mode);
     geom.dispose();
-    if (chunk) chunks.push(chunk);
-  }
-  return chunks;
-}
-
-function parse3mfToChunks(buffer: ArrayBuffer, mode: MeshParseMode): ParsedGeometryChunk[] {
-  const unzipped = unzipSync(new Uint8Array(buffer));
-  const decoder = new TextDecoder('utf-8');
-  const chunks: ParsedGeometryChunk[] = [];
-  for (const [entryName, data] of Object.entries(unzipped)) {
-    if (!entryName.toLowerCase().endsWith('.model')) continue;
-    const xmlText = decoder.decode(data);
-    chunks.push(...parse3mfXmlMeshes(xmlText, mode));
-  }
-  if (chunks.length === 0) {
-    throw new Error('Nenhuma malha encontrada no .3mf');
+    if (chunk) chunks.push({ ...chunk, name: part.name });
   }
   return chunks;
 }
@@ -132,14 +95,14 @@ function parseToChunks(
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
         const chunk = extractGeometryChunk(mesh.geometry, mode);
-        if (chunk) chunks.push(chunk);
+        if (chunk) chunks.push({ ...chunk, name: mesh.name || undefined });
         mesh.geometry.dispose();
       }
     });
     return chunks;
   }
 
-  if (ext === '3MF' && mode === 'thumbnail') {
+  if (ext === '3MF') {
     return parse3mfToChunks(buffer, mode);
   }
 

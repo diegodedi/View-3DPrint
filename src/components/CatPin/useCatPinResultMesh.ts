@@ -92,7 +92,7 @@ export function useCatPinResultMesh({
             isSelected,
           });
 
-          const mesh = new THREE.Mesh(part.geometry, mat);
+          const mesh = new THREE.Mesh(part.geometry.clone(), mat);
           mesh.userData.partId = part.id;
           if (placement) {
             mesh.quaternion.set(
@@ -143,7 +143,7 @@ export function useCatPinResultMesh({
           isSelected,
         });
 
-        const mesh = new THREE.Mesh(part.geometry, mat);
+        const mesh = new THREE.Mesh(part.geometry.clone(), mat);
         mesh.applyMatrix4(mainMesh.matrixWorld);
         mesh.userData.partId = part.id;
 
@@ -183,7 +183,7 @@ export function useCatPinResultMesh({
           opacity: 0.25,
         });
 
-        const ghostMesh = new THREE.Mesh(part.geometry, ghostMat);
+        const ghostMesh = new THREE.Mesh(part.geometry.clone(), ghostMat);
         ghostMesh.applyMatrix4(mainMesh.matrixWorld);
         ghostMesh.userData.partId = part.id;
         resultGroupRef.current.add(ghostMesh);
