@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
-const { createZipBuffer, createZipBufferAsync } = require('./zipWriter.cjs');
+const { createZipBufferAsync } = require('./zipWriter.cjs');
 const { openModelInSlicer } = require('./slicerService.cjs');
 
 function escapeXml(str) {
@@ -142,25 +142,6 @@ function build3mfEntries(projectName, parts, options = {}) {
 }
 
 /**
- * Gera o buffer binário de um pacote 3MF com múltiplas peças distribuídas na mesa.
- */
-function createMultiPart3mfBuffer(projectName, parts, options = {}) {
-  return createZipBuffer(build3mfEntries(projectName, parts, options));
-}
-
-/**
- * Salva o projeto multi-peças .3mf em disco de forma síncrona.
- */
-function saveMultiPart3mfFile(params) {
-  const { filePath, projectName, parts, options = {} } = params;
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const buf = createMultiPart3mfBuffer(projectName, parts, options);
-  fs.writeFileSync(filePath, buf);
-  return filePath;
-}
-
-/**
  * Salva o projeto multi-peças .3mf em disco de forma assíncrona (não bloqueia a UI).
  */
 async function saveMultiPart3mfFileAsync(params) {
@@ -190,8 +171,6 @@ async function openMultiPartProjectInSlicer(params) {
 }
 
 module.exports = {
-  createMultiPart3mfBuffer,
-  saveMultiPart3mfFile,
   saveMultiPart3mfFileAsync,
   openMultiPartProjectInSlicer,
 };

@@ -107,4 +107,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('webtabs:state-changed', handler);
     },
   },
+  hi3d: {
+    getStatus: () => ipcRenderer.invoke('hi3d:get-status'),
+    updateConfig: (patch) => ipcRenderer.invoke('hi3d:update-config', patch),
+    selectRuntimeDir: () => ipcRenderer.invoke('hi3d:select-runtime-dir'),
+    selectImage: () => ipcRenderer.invoke('hi3d:select-image'),
+    install: () => ipcRenderer.invoke('hi3d:install'),
+    cancelInstall: () => ipcRenderer.invoke('hi3d:cancel-install'),
+    generate: (request) => ipcRenderer.invoke('hi3d:generate', request),
+    cancelGenerate: () => ipcRenderer.invoke('hi3d:cancel-generate'),
+    onInstallProgress: (listener) => {
+      const handler = (_event, payload) => listener(payload);
+      ipcRenderer.on('hi3d:install-progress', handler);
+      return () => ipcRenderer.removeListener('hi3d:install-progress', handler);
+    },
+    onGenerateProgress: (listener) => {
+      const handler = (_event, payload) => listener(payload);
+      ipcRenderer.on('hi3d:generate-progress', handler);
+      return () => ipcRenderer.removeListener('hi3d:generate-progress', handler);
+    },
+  },
 });

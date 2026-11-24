@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderOpen, RefreshCw, Settings, Box, MessageSquare, Sparkles } from 'lucide-react';
+import { FolderOpen, RefreshCw, Settings, Box, MessageSquare, Sparkles, Cpu } from 'lucide-react';
 import type { AppSettings } from '../types/models';
 import type { WorkspaceTabId } from '../types/webTabs';
 
@@ -45,6 +45,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="brand-logo-row">
             <Box size={26} color="var(--color-primary)" aria-hidden="true" />
             <h1 className="brand-title">MakerView 3D</h1>
+            <span
+              className="brand-version"
+              aria-label={`Versão ${__APP_VERSION__}`}
+              title={`Versão atual do aplicativo: v${__APP_VERSION__}`}
+            >
+              v{__APP_VERSION__}
+            </span>
           </div>
           <span className="brand-count">
             {totalCount} {totalCount === 1 ? 'modelo' : 'modelos'}
@@ -84,6 +91,17 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Sparkles size={16} aria-hidden="true" />
             <span>3D Generation</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeWorkspace === 'hi3d'}
+            className="workspace-tab-btn"
+            data-active={activeWorkspace === 'hi3d'}
+            onClick={() => onSelectWorkspace('hi3d')}
+          >
+            <Cpu size={16} aria-hidden="true" />
+            <span>Hi3D Local</span>
           </button>
         </div>
 

@@ -9,6 +9,8 @@ import './styles/inspector.css';
 import './styles/catpin.css';
 import './styles/smart-slicer.css';
 import './styles/web-tabs.css';
+import './styles/hi3d.css';
+import './styles/hi3d-generator.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

@@ -26,6 +26,7 @@ electron/
     index.cjs              → Pool e ponte IPC Node.js para a worker thread
   launcher.cjs             → Safe cross-platform process spawner for Electron
   localAssetProtocol.cjs   → Custom local-asset:// protocol handler for zero-Base64 cached thumbnails
+  exportIpc.cjs            → Handlers IPC de exportação STL (CatPin) e pacotes Multi-Part `.3mf`
   main.cjs                 → Electron main process, window lifecycle, IPC handlers (CatPin cut & suggest)
   preload.cjs              → Secure contextBridge API with small LRU model buffer cache
   scannerCache.cjs         → Persisted directory mtime index cache in userData (v2)
@@ -40,15 +41,23 @@ electron/
   zipWriter.cjs            → Native Node.js zlib/CRC32 `.zip`/`.3mf` archive generator (sync + async)
   webTabsConfig.cjs        → Persistência de URLs, validação e User-Agent das abas web externas (Chat / 3D Generation)
   webTabsService.cjs       → Gerenciador de WebContentsView com sessões persistentes (`persist:ai-chat`, `persist:3d-gen`) e IPC
+  hi3d/
+    config.cjs             → Configurações persistidas e constantes das wheels Windows/repositórios Hi3D Local
+    gpuDetector.cjs        → Detecção de GPU NVIDIA via `nvidia-smi`, VRAM, Compute Capability e espaço em disco
+    installer.cjs          → Instalador 1-clique sob demanda (Python 3.10 via `uv` + Hi3Dv1.0 + Hunyuan3D-2 + CUDA 12.4)
+    hi3d_worker.py         → Pipeline 1-imagem (`rembg` → `Hunyuan3D-2 mini` → `Hi3D v1.0` → `.stl`/`.obj` em mm)
+    runner.cjs             → Executor IPC do worker Hi3D com progresso em tempo real e salvamento na biblioteca
+    index.cjs              → Registro dos handlers IPC `hi3d:*` isolados do restante do app
 INICIAR_APP.bat            → 1-click desktop launcher for Windows users
 src/
   components/
     CatPin/                → CatPinModal, CatPinCanvas, CatPinControls, CatPinConnectorFields, CatPinPartsList, CatPinResultPanel, CatPinOverlay2D, CatPinViewportToolbar, useCatPinMultiParts, useCatPinPlateArrangement, useCatPinCutWorkflow, useCatPinShortcuts, useCatPinCutterLifecycle, useCatPinMirrorLifecycle, useCatPinPointReprojection, useCatPinScene, useCatPinPoints3D, useCatPinGizmoSync, useCatPinResultMesh, useCatPinConnectors, useCatPinModelMesh, useCatPinModelLoader
     WebTabs/               → WebTabWorkspace, WebTabToolbar, AiChatPicker (abas externas integradas Chat e 3D Generation)
+    Hi3D/                  → Hi3dWorkspace, Hi3dGpuAlert, Hi3dSetupCard, Hi3dGeneratorCard (aba isolada Hi3D Local 1-imagem)
     ...                    → Header, ViewportShadingControl, ViewportShadingSpherePreview, ObjectGrid, ObjectCard, Viewer3D, useViewer3DScene, DetailsPanel, SlicerModal, SmartSlicePanel, SmartSliceFields, ModelNotesField
-  hooks/                   → Custom React hooks (`useLibrary.ts`, `useCatalogItems.ts`, `useSlicerSettings.ts`, `useWebTabs.ts`)
-  styles/                  → `design-system.css`, `app.css`, `inspector.css`, `catpin.css`, `smart-slicer.css`, `web-tabs.css`
-  types/                   → TypeScript interfaces (`models.ts`, `thumbCache.ts`, `catpinMultiParts.ts`, `plateTypes.ts`, `webTabs.ts`)
+  hooks/                   → Custom React hooks (`useLibrary.ts`, `useCatalogItems.ts`, `useSlicerSettings.ts`, `useWebTabs.ts`, `useHi3dLocal.ts`)
+  styles/                  → `design-system.css`, `app.css`, `inspector.css`, `catpin.css`, `smart-slicer.css`, `web-tabs.css`, `hi3d.css`, `hi3d-generator.css`
+  types/                   → TypeScript interfaces (`models.ts`, `catpin.ts`, `thumbCache.ts`, `catpinMultiParts.ts`, `plateTypes.ts`, `webTabs.ts`, `hi3d.ts`)
   utils/
     plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor, printerBedResolver
     catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, mirrorCutUtils, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
@@ -100,4 +109,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-21 (Release v1.2.2: suporte universal 3MF Core + Production Extension p:path em Web Worker/Viewer3D e carregamento multi-peças isolado no CatPin com encoder STL binário)
+## Last updated: 2026-11-24 (Refatoração de limpeza: extração exportIpc.cjs e catpin.ts, remoção de código morto e 0 violações no audit_inspector)

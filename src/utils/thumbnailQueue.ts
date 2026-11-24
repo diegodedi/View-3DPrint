@@ -4,7 +4,7 @@ import { getThumbnailWorkerConcurrency } from './meshWorkerClient';
 import { clearPredecodeCache } from './thumbPredecoder';
 import {
   clearSessionThumbStore,
-  generateAndCacheThumbnail,
+  resolveItemThumbnail,
   getCachedGeneratedThumbnail,
   hasCachedGeneratedThumbnail,
   setCachedGeneratedThumbnail,
@@ -123,7 +123,7 @@ function pumpWorkers(): void {
     activeWorkers++;
     emitProgress();
 
-    void generateAndCacheThumbnail(item)
+    void resolveItemThumbnail(item)
       .then(({ savedPath, resolvedUrl }) => {
         if (gen !== sessionGeneration) return;
         if (savedPath && resolvedUrl) {

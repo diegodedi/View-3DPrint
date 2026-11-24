@@ -1,4 +1,4 @@
-export type WorkspaceTabId = 'viewer' | 'chat' | 'gen3d';
+export type WorkspaceTabId = 'viewer' | 'chat' | 'gen3d' | 'hi3d';
 export type ExternalWebTabId = 'chat' | 'gen3d';
 
 export interface WebTabBounds {

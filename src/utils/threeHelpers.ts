@@ -7,11 +7,6 @@ import { createGrayMatcapMaterial } from './matcapUtils';
 import { computeCreasedNormalsInPlace } from './normalSmoother';
 import { parse3mfBufferToObject3D } from './threeMfParser';
 
-let sharedThumbRenderer: THREE.WebGLRenderer | null = null;
-let sharedThumbScene: THREE.Scene | null = null;
-let sharedThumbCamera: THREE.PerspectiveCamera | null = null;
-let sharedModelHolder: THREE.Group | null = null;
-
 export interface MeshMaterialOptions {
   skipCavity?: boolean;
 }
@@ -174,60 +169,4 @@ export function measureObject(object3d: THREE.Object3D): BoundingBoxDimensions {
 export function prepareObjectOnPlate(object3d: THREE.Object3D): BoundingBoxDimensions {
   centerObjectOnPlate(object3d);
   return measureObject(object3d);
-}
-
-/**
- * @deprecated Use prepareObjectOnPlate instead (retained for backward compatibility).
- */
-export const centerAndMeasureObject = prepareObjectOnPlate;
-
-/**
- * Renders an offscreen 3D preview JPEG data URL using the shared singleton scene and gray MatCap.
- * @param buffer Raw 3D model buffer
- * @param extension 'STL' | 'OBJ' | '3MF'
- */
-export function renderBufferToThumbnailDataUrl(buffer: ArrayBuffer, extension: string): string {
-  if (!sharedThumbRenderer) {
-    sharedThumbRenderer = new THREE.WebGLRenderer({
-      antialias: true,
-      preserveDrawingBuffer: true,
-      powerPreference: 'high-performance',
-    });
-    sharedThumbRenderer.setSize(320, 220);
-    sharedThumbRenderer.setPixelRatio(1);
-
-    sharedThumbScene = new THREE.Scene();
-    sharedThumbScene.background = new THREE.Color(0x161616);
-
-    const grid = new THREE.GridHelper(180, 18, 0x2e2e2e, 0x1f1f1f);
-    sharedThumbScene.add(grid);
-
-    sharedModelHolder = new THREE.Group();
-    sharedThumbScene.add(sharedModelHolder);
-
-    sharedThumbCamera = new THREE.PerspectiveCamera(38, 320 / 220, 0.1, 4000);
-  }
-
-  if (!sharedThumbScene || !sharedThumbCamera || !sharedModelHolder) {
-    return '';
-  }
-
-  let object3d: THREE.Object3D | null = null;
-  try {
-    object3d = parseModelBufferToMesh(buffer, extension);
-    const dims = centerAndMeasureObject(object3d);
-    sharedModelHolder.add(object3d);
-
-    const maxDim = Math.max(dims.widthMm, dims.depthMm, dims.heightMm, 20);
-    sharedThumbCamera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.4);
-    sharedThumbCamera.lookAt(0, dims.heightMm * 0.42, 0);
-
-    sharedThumbRenderer.render(sharedThumbScene, sharedThumbCamera);
-    return sharedThumbRenderer.domElement.toDataURL('image/jpeg', 0.86);
-  } finally {
-    if (object3d) {
-      sharedModelHolder.remove(object3d);
-      disposeObjectGeometries(object3d);
-    }
-  }
 }

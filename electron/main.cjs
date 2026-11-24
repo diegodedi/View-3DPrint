@@ -11,10 +11,7 @@ const {
   openConfiguredModelInSlicer,
   getCrealityCatalogForSlicer,
 } = require('./slicerService.cjs');
-const {
-  saveMultiPart3mfFileAsync,
-  openMultiPartProjectInSlicer,
-} = require('./multiPart3mfService.cjs');
+const { registerExportIpc } = require('./exportIpc.cjs');
 const {
   executeCatpinCutForUi,
   suggestCatpinPinForUi,
@@ -23,6 +20,7 @@ const {
 const { initAutoUpdater, checkForUpdates } = require('./updater.cjs');
 const { registerWebTabsIpc } = require('./webTabsService.cjs');
 const { registerThumbCacheIpc } = require('./thumbCache.cjs');
+const { registerHi3dIpc } = require('./hi3d/index.cjs');
 let mainWindow = null;
 
 registerLocalAssetScheme();
@@ -178,102 +176,9 @@ function registerIpcHandlers() {
     return saveFolderMetadata(folderPath, metadata, cacheDir);
   });
 
-  ipcMain.handle('app:save-catpin-files', async (_event, { targetFolder, defaultPath, files, openFolderAfter = true }) => {
-    let outDir = targetFolder;
-    if (!outDir) {
-      const dialogOptions = {
-        title: 'Selecione a Pasta para Salvar as Peças Cortadas',
-        properties: ['openDirectory', 'createDirectory'],
-      };
-
-      if (defaultPath && typeof defaultPath === 'string') {
-        try {
-          let candidateDir = defaultPath.trim();
-          if (fs.existsSync(candidateDir)) {
-            const stat = fs.statSync(candidateDir);
-            if (!stat.isDirectory()) {
-              candidateDir = path.dirname(candidateDir);
-            }
-            if (fs.existsSync(candidateDir)) {
-              dialogOptions.defaultPath = candidateDir;
-            }
-          } else {
-            const parentDir = path.dirname(candidateDir);
-            if (fs.existsSync(parentDir)) {
-              dialogOptions.defaultPath = parentDir;
-            }
-          }
-        } catch {
-          // Fallback silencioso se o caminho não for acessível
-        }
-      }
-
-      const res = await dialog.showOpenDialog(mainWindow, dialogOptions);
-      if (res.canceled || res.filePaths.length === 0) {
-        return { success: false, savedPaths: [], folder: '' };
-      }
-      outDir = res.filePaths[0];
-    }
-
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
-    }
-
-    const savedPaths = [];
-    for (const file of files) {
-      const filename = file.name.toLowerCase().endsWith('.stl') ? file.name : `${file.name}.stl`;
-      const fullPath = path.join(outDir, filename);
-      fs.writeFileSync(fullPath, Buffer.from(file.buffer));
-      savedPaths.push(fullPath);
-    }
-
-    if (openFolderAfter) {
-      shell.openPath(outDir);
-    }
-
-    return { success: true, savedPaths, folder: outDir };
-  });
-
   ipcMain.handle('app:execute-catpin-cut', (_event, payload) => executeCatpinCutForUi(payload));
   ipcMain.handle('app:suggest-catpin-pin', (_event, payload) => suggestCatpinPinForUi(payload));
   ipcMain.handle('app:diagnose-catpin-model', (_event, payload) => diagnoseCatpinModelForUi(payload));
-
-  ipcMain.handle('app:save-multi-part-3mf', async (_event, payload) => {
-    const { projectName, parts, targetFolder, defaultPath, bedWidthMm, bedDepthMm } = payload || {};
-    const cleanBase = String(projectName || 'Projeto').replace(/\.[^/.]+$/, '');
-    const cleanName = cleanBase.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const defaultFileName = `${cleanName}_MesaCompleta.3mf`;
-    const options = { bedWidthMm, bedDepthMm };
-
-    if (targetFolder && typeof targetFolder === 'string') {
-      const outFile = path.join(targetFolder, defaultFileName);
-      await saveMultiPart3mfFileAsync({ filePath: outFile, projectName: cleanBase, parts, options });
-      return { success: true, savedPath: outFile, folder: targetFolder };
-    }
-
-    const saveOptions = {
-      title: 'Salvar Projeto Completo da Mesa (.3MF)',
-      defaultPath: defaultPath ? path.join(defaultPath, defaultFileName) : defaultFileName,
-      filters: [{ name: 'Projeto 3D Manufacturing Format (.3mf)', extensions: ['3mf'] }],
-    };
-    const res = await dialog.showSaveDialog(mainWindow, saveOptions);
-    if (res.canceled || !res.filePath) {
-      return { success: false, savedPath: '' };
-    }
-    await saveMultiPart3mfFileAsync({ filePath: res.filePath, projectName: cleanBase, parts, options });
-    shell.showItemInFolder(res.filePath);
-    return { success: true, savedPath: res.filePath, folder: path.dirname(res.filePath) };
-  });
-
-  ipcMain.handle('app:open-multi-part-in-slicer', async (_event, payload) => {
-    const { projectName, parts, slicerExecutablePath, bedWidthMm, bedDepthMm } = payload || {};
-    return openMultiPartProjectInSlicer({
-      projectName,
-      parts,
-      slicerExecutablePath,
-      options: { bedWidthMm, bedDepthMm },
-    });
-  });
 
   ipcMain.handle('app:check-for-updates', () => {
     checkForUpdates(mainWindow, true);
@@ -284,11 +189,12 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   registerLocalAssetProtocol();
   registerIpcHandlers();
+  registerExportIpc(() => mainWindow);
   registerThumbCacheIpc(app.getPath('userData'));
   registerWebTabsIpc(() => mainWindow);
+  registerHi3dIpc(() => mainWindow, () => loadAppSettings(getDefaultLibraryPath()).libraryPath);
   createMainWindow();
   initAutoUpdater(mainWindow);
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -297,4 +203,3 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-

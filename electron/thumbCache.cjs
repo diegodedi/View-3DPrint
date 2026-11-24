@@ -62,7 +62,8 @@ async function listCachedThumbFiles(cacheDir) {
  * Resolves a cached thumbnail absolute path in O(1) RAM using a preloaded filename set.
  * Priority: 1) custom user capture, 2) incremental auto cache, 3) legacy folder file.
  */
-function resolveCachedThumbPath({ cacheDir, thumbFileSet, folderPath, cacheKey, legacyPath }) {
+function resolveCachedThumbPath(params) {
+  const { cacheDir, thumbFileSet, folderPath, cacheKey, legacyPath } = params;
   const dir = getThumbCacheDir(cacheDir);
   if (dir && thumbFileSet && thumbFileSet.size > 0) {
     const customBase = computeCustomThumbBase(folderPath);
@@ -90,7 +91,8 @@ async function ensureThumbDir(cacheDir) {
 /**
  * Writes binary WebP/PNG/JPG auto-thumbnail bytes directly to centralized SSD cache and primes RAM.
  */
-async function saveAutoThumbnailBytes(cacheDir, cacheKey, bytes, ext = '.webp') {
+async function saveAutoThumbnailBytes(params) {
+  const { cacheDir, cacheKey, bytes, ext = '.webp' } = params;
   if (!cacheKey || !bytes) return null;
   const dir = await ensureThumbDir(cacheDir);
   const safeExt = AUTO_EXTS.includes(ext) ? ext : '.webp';
@@ -137,7 +139,7 @@ async function saveCustomThumbnailDataUrl(cacheDir, folderPath, dataUrl) {
 function registerThumbCacheIpc(cacheDir) {
   ipcMain.handle('thumbcache:save-auto', async (_event, payload) => {
     const { cacheKey, bytes, ext } = payload || {};
-    const thumbnailPath = await saveAutoThumbnailBytes(cacheDir, cacheKey, bytes, ext || '.webp');
+    const thumbnailPath = await saveAutoThumbnailBytes({ cacheDir, cacheKey, bytes, ext: ext || '.webp' });
     return { thumbnailPath };
   });
 
@@ -146,7 +148,12 @@ function registerThumbCacheIpc(cacheDir) {
     if (!modelPath || !cacheKey) return { thumbnailPath: null };
     const extracted = await extract3mfEmbeddedThumbnail(modelPath);
     if (!extracted) return { thumbnailPath: null };
-    const thumbnailPath = await saveAutoThumbnailBytes(cacheDir, cacheKey, extracted.buffer, extracted.ext);
+    const thumbnailPath = await saveAutoThumbnailBytes({
+      cacheDir,
+      cacheKey,
+      bytes: extracted.buffer,
+      ext: extracted.ext,
+    });
     return { thumbnailPath };
   });
 }

@@ -76,7 +76,7 @@ export function clearSessionThumbStore(): void {
 /**
  * Generates or extracts a thumbnail for a single catalog item and persists it in centralized SSD WebP cache.
  */
-export async function generateAndCacheThumbnail(
+export async function resolveItemThumbnail(
   item: PrintObjectItem
 ): Promise<{ savedPath: string | null; resolvedUrl: string }> {
   const api = window.electronAPI;

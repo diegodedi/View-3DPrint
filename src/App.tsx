@@ -11,6 +11,9 @@ const DetailsPanel = React.lazy(() =>
 const SlicerModal = React.lazy(() =>
   import('./components/SlicerModal').then((m) => ({ default: m.SlicerModal }))
 );
+const Hi3dWorkspace = React.lazy(() =>
+  import('./components/Hi3D/Hi3dWorkspace').then((m) => ({ default: m.Hi3dWorkspace }))
+);
 
 /**
  * Root MakerWorld-style 3D Asset Browser displaying the entire root directory in a visual card grid.
@@ -113,9 +116,18 @@ export const App: React.FC = () => {
       </div>
 
       <WebTabWorkspace
-        activeTab={activeWorkspace === 'viewer' ? null : activeWorkspace}
+        activeTab={activeWorkspace === 'chat' || activeWorkspace === 'gen3d' ? activeWorkspace : null}
         isSuspended={isSlicerModalOpen || Boolean(selectedItem)}
       />
+
+      {activeWorkspace === 'hi3d' && (
+        <Suspense fallback={null}>
+          <Hi3dWorkspace
+            onModelGenerated={refreshLibrary}
+            onOpenLibrary={() => setActiveWorkspace('viewer')}
+          />
+        </Suspense>
+      )}
 
       <Suspense fallback={null}>
         {selectedItem && (

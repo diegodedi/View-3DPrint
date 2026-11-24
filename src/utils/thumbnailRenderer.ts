@@ -83,19 +83,16 @@ function runSerializedRender<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/**
- * Parses a 3D model off-thread in the worker pool, then renders a compact binary WebP thumbnail (zero Base64).
- */
-export async function renderBufferToThumbnailWebpBytesAsync(
-  buffer: ArrayBuffer | Uint8Array,
-  extension: string
-): Promise<Uint8Array | null> {
-  const object3d = await parseModelBufferAsync(buffer, extension, { mode: 'thumbnail' });
+async function renderObjectWithEncoder<T>(
+  object3d: THREE.Object3D,
+  fallback: T,
+  encode: (canvas: HTMLCanvasElement) => Promise<T>
+): Promise<T> {
   return runSerializedRender(async () => {
     ensureThumbEngine();
     if (!thumbRenderer || !thumbScene || !thumbCamera || !thumbHolder) {
       disposeObjectGeometries(object3d);
-      return null;
+      return fallback;
     }
     try {
       const dims = prepareObjectOnPlate(object3d);
@@ -104,12 +101,23 @@ export async function renderBufferToThumbnailWebpBytesAsync(
       thumbCamera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.4);
       thumbCamera.lookAt(0, dims.heightMm * 0.42, 0);
       thumbRenderer.render(thumbScene, thumbCamera);
-      return await canvasToWebpBytesAsync(thumbRenderer.domElement, 0.84);
+      return await encode(thumbRenderer.domElement);
     } finally {
       thumbHolder.remove(object3d);
       disposeObjectGeometries(object3d);
     }
   });
+}
+
+/**
+ * Parses a 3D model off-thread in the worker pool, then renders a compact binary WebP thumbnail (zero Base64).
+ */
+export async function renderBufferToThumbnailWebpBytesAsync(
+  buffer: ArrayBuffer | Uint8Array,
+  extension: string
+): Promise<Uint8Array | null> {
+  const object3d = await parseModelBufferAsync(buffer, extension, { mode: 'thumbnail' });
+  return renderObjectWithEncoder(object3d, null, (canvas) => canvasToWebpBytesAsync(canvas, 0.84));
 }
 
 /**
@@ -120,23 +128,5 @@ export async function renderBufferToThumbnailDataUrlAsync(
   extension: string
 ): Promise<string> {
   const object3d = await parseModelBufferAsync(buffer, extension, { mode: 'thumbnail' });
-  return runSerializedRender(async () => {
-    ensureThumbEngine();
-    if (!thumbRenderer || !thumbScene || !thumbCamera || !thumbHolder) {
-      disposeObjectGeometries(object3d);
-      return '';
-    }
-    try {
-      const dims = prepareObjectOnPlate(object3d);
-      thumbHolder.add(object3d);
-      const maxDim = Math.max(dims.widthMm, dims.depthMm, dims.heightMm, 20);
-      thumbCamera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.4);
-      thumbCamera.lookAt(0, dims.heightMm * 0.42, 0);
-      thumbRenderer.render(thumbScene, thumbCamera);
-      return await canvasToDataUrlAsync(thumbRenderer.domElement, 0.84);
-    } finally {
-      thumbHolder.remove(object3d);
-      disposeObjectGeometries(object3d);
-    }
-  });
+  return renderObjectWithEncoder(object3d, '', (canvas) => canvasToDataUrlAsync(canvas, 0.84));
 }

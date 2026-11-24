@@ -6,4 +6,6 @@ release/
 .DS_Store
 *.log
 audit_out.json
+__pycache__/
+*.pyc
 
