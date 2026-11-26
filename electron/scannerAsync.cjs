@@ -105,6 +105,9 @@ async function buildItemFromEntries(params) {
     legacyPath: legacyThumbPath,
   });
 
+  const latestModelMtimeMs = models.reduce((max, m) => Math.max(max, m.mtimeMs || 0), 0);
+  const updatedAt = Math.max(dirMtimeMs || 0, latestModelMtimeMs);
+
   return {
     id: Buffer.from(dirPath).toString('base64url'),
     name: formatFolderTitle(folderName),
@@ -118,7 +121,7 @@ async function buildItemFromEntries(params) {
     thumbnailPath: resolvedThumb,
     thumbCacheKey,
     models,
-    updatedAt: dirMtimeMs,
+    updatedAt,
   };
 }
 
@@ -202,7 +205,11 @@ async function scanLibraryFolderAsync(rootPath, options = {}) {
         cacheKey,
         legacyPath: legacyThumbPath,
       });
-      const hydratedItem = { ...cached.item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb };
+      const latestCachedModelMtime = Array.isArray(cached.item.models)
+        ? cached.item.models.reduce((max, m) => Math.max(max, m.mtimeMs || 0), 0)
+        : 0;
+      const updatedAt = Math.max(cached.item.updatedAt || 0, dirMtimeMs || 0, latestCachedModelMtime);
+      const hydratedItem = { ...cached.item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb, updatedAt };
       nextCache[dirPath] = { ...cached, item: hydratedItem };
       results.push(hydratedItem);
       return;
@@ -242,7 +249,9 @@ async function scanLibraryFolderAsync(rootPath, options = {}) {
   });
 
   saveScannerCache(cacheDir, rootPath, nextCache);
-  return results.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return results.sort(
+    (a, b) => ((b.updatedAt || 0) - (a.updatedAt || 0)) || a.name.localeCompare(b.name, 'pt-BR')
+  );
 }
 
 module.exports = { scanLibraryFolderAsync };

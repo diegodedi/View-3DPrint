@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import type { BoundingBoxDimensions } from '../types/models';
 import { analyzeRawMeshes, type RawMeshInput } from '../utils/meshAnalyzer';
 import { extractSerializedRawMeshes } from '../utils/meshExtractor';
 import { computeCreasedNormalsInPlace } from '../utils/normalSmoother';
-import { parse3mfBufferToParts } from '../utils/threeMfParser';
+import { ensureValidGeometryNormals, parseStlBufferSafe } from '../utils/stlSafeParser';
+import { parseViewer3mfBufferToParts } from '../utils/viewer3mfParser';
 
 export interface ParsedGeometryChunk {
   name?: string;
@@ -26,14 +26,16 @@ function extractGeometryChunk(
   geom: THREE.BufferGeometry,
   mode: MeshParseMode = 'viewer'
 ): ParsedGeometryChunk | null {
-  const posAttr = geom.attributes.position;
-  if (!posAttr) return null;
+  const initialPosAttr = geom.attributes.position;
+  if (!initialPosAttr || initialPosAttr.count < 3) return null;
 
   if (mode === 'thumbnail') {
-    if (!geom.attributes.normal) geom.computeVertexNormals();
+    ensureValidGeometryNormals(geom);
   } else {
     computeCreasedNormalsInPlace(geom);
+    ensureValidGeometryNormals(geom);
   }
+  const posAttr = geom.attributes.position;
   const normAttr = geom.attributes.normal;
   const cavAttr = geom.attributes.aCavity;
   const idxAttr = geom.index;
@@ -61,7 +63,7 @@ function extractGeometryChunk(
 }
 
 function parse3mfToChunks(buffer: ArrayBuffer, mode: MeshParseMode): ParsedGeometryChunk[] {
-  const parts = parse3mfBufferToParts(buffer);
+  const parts = parseViewer3mfBufferToParts(buffer);
   const chunks: ParsedGeometryChunk[] = [];
   for (const part of parts) {
     const geom = new THREE.BufferGeometry();
@@ -81,10 +83,11 @@ function parseToChunks(
 ): ParsedGeometryChunk[] {
   const ext = extension.toUpperCase();
   if (ext === 'STL') {
-    const geom = new STLLoader().parse(buffer);
+    const geom = parseStlBufferSafe(buffer);
     const chunk = extractGeometryChunk(geom, mode);
     geom.dispose();
-    return chunk ? [chunk] : [];
+    if (!chunk) throw new Error('Nenhuma malha 3D válida encontrada no arquivo .stl');
+    return [chunk];
   }
 
   if (ext === 'OBJ') {

@@ -80,30 +80,39 @@ export async function resolveItemThumbnail(
   item: PrintObjectItem
 ): Promise<{ savedPath: string | null; resolvedUrl: string }> {
   const api = window.electronAPI;
-  const primaryModel = item.models[0];
-  if (!api || !primaryModel) return { savedPath: null, resolvedUrl: '' };
+  if (!api || !item.models || item.models.length === 0) return { savedPath: null, resolvedUrl: '' };
 
   let savedPath: string | null = null;
   let resolvedUrl = '';
   const cacheKey = item.thumbCacheKey || '';
 
-  if (primaryModel.extension.toUpperCase() === '3MF' && cacheKey && api.thumbCache?.extract3mfThumb) {
-    const extracted = await api.thumbCache.extract3mfThumb(primaryModel.path, cacheKey);
-    if (extracted?.thumbnailPath) {
-      savedPath = extracted.thumbnailPath;
-    }
-  }
-
-  if (!savedPath) {
-    const buffer = await api.readModelBuffer(primaryModel.path);
-    if (cacheKey && api.thumbCache?.saveAutoWebp) {
-      const bytes = await renderBufferToThumbnailWebpBytesAsync(buffer, primaryModel.extension);
-      if (bytes && bytes.byteLength > 0) {
-        const saved = await api.thumbCache.saveAutoWebp(cacheKey, bytes, '.webp');
-        savedPath = saved?.thumbnailPath || null;
+  for (const model of item.models) {
+    try {
+      if (model.extension.toUpperCase() === '3MF' && cacheKey && api.thumbCache?.extract3mfThumb) {
+        const extracted = await api.thumbCache.extract3mfThumb(model.path, cacheKey);
+        if (extracted?.thumbnailPath) {
+          savedPath = extracted.thumbnailPath;
+          break;
+        }
       }
-    } else {
-      resolvedUrl = await renderBufferToThumbnailDataUrlAsync(buffer, primaryModel.extension);
+
+      const buffer = await api.readModelBuffer(model.path);
+      if (cacheKey && api.thumbCache?.saveAutoWebp) {
+        const bytes = await renderBufferToThumbnailWebpBytesAsync(buffer, model.extension);
+        if (bytes && bytes.byteLength > 0) {
+          const saved = await api.thumbCache.saveAutoWebp(cacheKey, bytes, '.webp');
+          savedPath = saved?.thumbnailPath || null;
+          if (savedPath) break;
+        }
+      } else {
+        const dataUrl = await renderBufferToThumbnailDataUrlAsync(buffer, model.extension);
+        if (dataUrl) {
+          resolvedUrl = dataUrl;
+          break;
+        }
+      }
+    } catch {
+      continue;
     }
   }
 

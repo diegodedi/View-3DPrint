@@ -91,9 +91,15 @@ async function readCachedLibraryItems(rootPath, cacheDir) {
       cacheKey,
       legacyPath: item.thumbnailPath,
     });
-    items.push({ ...item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb });
+    const latestModelMtime = Array.isArray(item.models)
+      ? item.models.reduce((max, m) => Math.max(max, m.mtimeMs || 0), 0)
+      : 0;
+    const updatedAt = Math.max(item.updatedAt || 0, latestModelMtime);
+    items.push({ ...item, thumbCacheKey: cacheKey, thumbnailPath: resolvedThumb, updatedAt });
   }
-  return items.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return items.sort(
+    (a, b) => ((b.updatedAt || 0) - (a.updatedAt || 0)) || a.name.localeCompare(b.name, 'pt-BR')
+  );
 }
 
 module.exports = { scanLibraryFolderAsync, saveFolderMetadata, readCachedLibraryItems };

@@ -61,7 +61,7 @@ src/
   utils/
     plate/                 → autoOrientAntiSupport, plateArranger, geometryDataExtractor, printerBedResolver
     catpin/                → cutSpecBuilder, cutterMeshBuilder, straightCutterBuilder, detailPlugCutterBuilder, mirrorCutUtils, rootGeometryExtractor, cutterSplineHelpers, connectorMeshBuilder, bestFitPlane, deformedSeamMesh
-    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `threeMfParser.ts`, `geometryStlEncoder.ts`, `normalSmoother.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbSessionStore.ts`, `thumbnailRenderer.ts`, `thumbPredecoder.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
+    ...                    → Helpers (`formatters.ts`, `threeHelpers.ts`, `stlSafeParser.ts`, `viewer3mfParser.ts`, `viewerModelFallback.ts`, `threeMfParser.ts`, `threeMfXmlUtils.ts`, `geometryStlEncoder.ts`, `normalSmoother.ts`, `normalTopologyUtils.ts`, `meshCavityBuilder.ts`, `studioResinMaterial.ts`, `matcapUtils.ts`, `thumbnailQueue.ts`, `thumbSessionStore.ts`, `thumbnailRenderer.ts`, `thumbPredecoder.ts`, `meshAnalyzer.ts`, `sliceRecommender.ts`, `meshExtractor.ts`, `meshWorkerClient.ts`, `modelFolderResolver.ts`)
   workers/                 → `meshWorker.ts` (off-thread STL/OBJ/3MF viewer + thumbnail parsing, mesh analysis & deduplication)
 sample-library/            → Demo 3D objects folder for immediate testing
 
@@ -82,7 +82,9 @@ src/components/CatPin/CatPinCanvas.tsx      → Three.js Draft Viewport (Destra 
 src/components/CatPin/useCatPinResultMesh.ts→ Result Mode multi-part renderer aligned to rootTransform + Explode View + Plate Nesting Mode
 src/components/ViewportShadingControl.tsx   → Mini configurador global de Viewport Shading (Cor, Cavity Distance, Cavity Intensity, Roughness, Specular) posicionado na viewport de visualização do objeto solo (Viewer3D)
 src/components/ViewportShadingSpherePreview.tsx → Esfera 3D esculpida de pré-visualização em tempo real dos modificadores de Viewport Shading
-src/utils/normalSmoother.ts                 → Suavizador de normais com Crease Angle in-place (sem alterar vértices/índices) para Cavity perfeito em STL
+src/utils/normalSmoother.ts                 → Normais ponderadas por ângulo com Crease Angle real face-a-face (35°) e Smart Split para malhas indexadas (.3MF)
+src/utils/normalTopologyUtils.ts            → Soldagem espacial de vértices e cálculo de normais de face e ângulos internos para normalSmoother
+src/utils/meshCavityBuilder.ts              → Cálculo de curvatura `aCavity` isolado por grupo suave com difusão limitada por comprimento de aresta
 src/utils/studioResinMaterial.ts            → Shader global unificado (MatCap Cinza Padrão + Cavity + Roughness Difuso + Baixa Specular) para todas as abas e peças
 src/utils/catpin/bestFitPlane.ts            → Ajuste de plano por vetor Normal de Newell (Stokes) com base destra
 src/utils/catpin/deformedSeamMesh.ts        → Malha 3D deformada (Catmull-Rom 3D + superfície harmônica w(u,v)) fiel à Polyline
@@ -109,4 +111,4 @@ Sempre que for solicitada qualquer alteração no corte de malha, verificar a re
 - Conectores: exclusivos da ferramenta de Corte de Membro (Seam); as ferramentas de Extrusão de Detalhe e Corte Plano operam sem conectores por especificação. Pino no centróide exato da seleção e inversão de 180° com rotação imediata na viewport 3D.
 - Testes: executar bancada estendida (`npm run test:catpin`) e build (`npm run build:vite`) antes de liberar para o usuário.
 
-## Last updated: 2026-11-24 (Refatoração de limpeza: extração exportIpc.cjs e catpin.ts, remoção de código morto e 0 violações no audit_inspector)
+## Last updated: 2026-11-26 (Release v1.2.4: normais com Crease Angle 35°, Smart Split em .3MF, Cavity por grupo suave, parsers STL/3MF seguros e ordenação por data recente)

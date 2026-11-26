@@ -10,7 +10,7 @@ import {
 } from './meshAnalyzer';
 import { extractSerializedMesh } from './meshExtractor';
 import { createGrayMatcapMaterial } from './matcapUtils';
-import { parseModelBufferToMesh } from './threeHelpers';
+import { parseViewerModelFallback } from './viewerModelFallback';
 import type { MeshParseMode, ParsedGeometryChunk } from '../workers/meshWorker';
 
 interface WorkerSlot {
@@ -115,6 +115,9 @@ function toOwnedArrayBuffer(buf: ArrayBuffer | Uint8Array): ArrayBuffer {
 }
 
 function chunksToObject3D(chunks: ParsedGeometryChunk[]): THREE.Object3D {
+  if (!chunks || chunks.length === 0) {
+    throw new Error('Nenhuma malha 3D válida encontrada no arquivo.');
+  }
   const mat = createGrayMatcapMaterial();
   if (chunks.length === 1) {
     const c = chunks[0];
@@ -177,10 +180,10 @@ export async function parseModelBufferAsync(
       );
       return chunksToObject3D(chunks);
     } catch {
-      return parseModelBufferToMesh(buffer, extension, fallbackOptions);
+      return parseViewerModelFallback(buffer, extension, fallbackOptions);
     }
   }
-  return parseModelBufferToMesh(buffer, extension, fallbackOptions);
+  return parseViewerModelFallback(buffer, extension, fallbackOptions);
 }
 
 /**

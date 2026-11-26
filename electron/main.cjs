@@ -114,8 +114,14 @@ function registerIpcHandlers() {
     try {
       const buffer = await fs.promises.readFile(filePath);
       return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    } catch {
-      throw new Error('Arquivo 3D não encontrado.');
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'ENOENT') throw new Error('Arquivo 3D não encontrado no disco.');
+      if (code === 'EACCES' || code === 'EPERM') throw new Error('Sem permissão para ler o arquivo 3D.');
+      if (code === 'EBUSY') throw new Error('Arquivo 3D em uso por outro programa.');
+      if (code === 'ENAMETOOLONG') throw new Error('Caminho do arquivo 3D excede o limite do sistema.');
+      if (code === 'ERR_FS_FILE_TOO_LARGE') throw new Error('Arquivo 3D grande demais para leitura direta em memória.');
+      throw new Error(`Falha ao ler arquivo 3D: ${(err && err.message) || 'erro desconhecido'}.`);
     }
   });
 

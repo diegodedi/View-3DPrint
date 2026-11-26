@@ -60,6 +60,15 @@ export function useViewer3DScene() {
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+    };
+    const handleContextRestored = () => {
+      renderSceneOnce();
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored);
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = false;
     controls.addEventListener('change', renderSceneOnce);
@@ -86,6 +95,8 @@ export function useViewer3DScene() {
     window.addEventListener('resize', handleResize);
 
     return () => {
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       controls.removeEventListener('change', renderSceneOnce);
       controls.dispose();
       window.removeEventListener('resize', handleResize);
@@ -118,9 +129,15 @@ export function useViewer3DScene() {
   const resetCamera = useCallback(
     (dimensions: BoundingBoxDimensions | null) => {
       if (!cameraRef.current || !controlsRef.current || !dimensions) return;
-      const maxDim = Math.max(dimensions.widthMm, dimensions.depthMm, dimensions.heightMm, 30);
-      cameraRef.current.position.set(maxDim * 1.5, maxDim * 1.2, maxDim * 1.5);
-      controlsRef.current.target.set(0, dimensions.heightMm * 0.45, 0);
+      const rawMax = Math.max(dimensions.widthMm, dimensions.depthMm, dimensions.heightMm);
+      const maxDim = Number.isFinite(rawMax) && rawMax > 0 ? Math.max(rawMax, 0.05) : 30;
+      const cam = cameraRef.current;
+      cam.near = Math.max(0.005, maxDim * 0.001);
+      cam.far = Math.max(5000, maxDim * 25);
+      cam.updateProjectionMatrix();
+      cam.position.set(maxDim * 1.5, maxDim * 1.2, maxDim * 1.5);
+      const targetY = Number.isFinite(dimensions.heightMm) ? dimensions.heightMm * 0.45 : 0;
+      controlsRef.current.target.set(0, targetY, 0);
       controlsRef.current.update();
       renderSceneOnce();
     },

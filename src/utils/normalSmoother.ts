@@ -1,21 +1,176 @@
 import * as THREE from 'three';
+import { computeGroupCavityAttribute } from './meshCavityBuilder';
+import { computeFacesAndAngles, weldVertexPositions } from './normalTopologyUtils';
 
-const MAX_HASH_TABLE_SIZE = 1 << 22;
+const MAX_SUPPORTED_TRIS = 600000;
+const DEFAULT_CREASE_ANGLE_DEG = 35;
 
-function nextPowerOfTwo(target: number): number {
-  let size = 1024;
-  while (size < target && size < MAX_HASH_TABLE_SIZE) size <<= 1;
-  return size;
+interface SmoothingResult {
+  cornerGlobalGroup: Int32Array;
+  cornerOutNormals: Float32Array;
+  totalGroups: number;
+}
+
+function buildCreasedSmoothingGroups(
+  weldedOf: Int32Array,
+  weldedCount: number,
+  idxArray: ArrayLike<number> | null,
+  cornerCount: number,
+  faceNormals: Float32Array,
+  cornerAngles: Float32Array,
+  creaseAngleDeg: number
+): SmoothingResult {
+  const vertHead = new Int32Array(weldedCount).fill(-1);
+  const cornerNext = new Int32Array(cornerCount);
+  for (let k = 0; k < cornerCount; k++) {
+    const w = weldedOf[idxArray ? idxArray[k] : k];
+    cornerNext[k] = vertHead[w];
+    vertHead[w] = k;
+  }
+
+  const cosThreshold = Math.cos((creaseAngleDeg * Math.PI) / 180);
+  const cornerGlobalGroup = new Int32Array(cornerCount);
+  const cornerOutNormals = new Float32Array(cornerCount * 3);
+  const seedNx: number[] = [], seedNy: number[] = [], seedNz: number[] = [];
+  const sumNx: number[] = [], sumNy: number[] = [], sumNz: number[] = [];
+  const vertCorners: number[] = [];
+  const localGroups: number[] = [];
+  let totalGroups = 0;
+
+  for (let w = 0; w < weldedCount; w++) {
+    vertCorners.length = 0;
+    for (let k = vertHead[w]; k !== -1; k = cornerNext[k]) vertCorners.push(k);
+    if (vertCorners.length === 0) continue;
+
+    seedNx.length = 0; seedNy.length = 0; seedNz.length = 0;
+    sumNx.length = 0; sumNy.length = 0; sumNz.length = 0;
+    localGroups.length = vertCorners.length;
+
+    for (let idx = 0; idx < vertCorners.length; idx++) {
+      const k = vertCorners[idx];
+      const t3 = ((k / 3) | 0) * 3;
+      const fnx = faceNormals[t3], fny = faceNormals[t3 + 1], fnz = faceNormals[t3 + 2];
+      const angle = cornerAngles[k];
+
+      let bestGroup = -1;
+      let bestDot = cosThreshold;
+      for (let g = 0; g < seedNx.length; g++) {
+        const dot = fnx * seedNx[g] + fny * seedNy[g] + fnz * seedNz[g];
+        if (dot >= bestDot) {
+          bestDot = dot;
+          bestGroup = g;
+        }
+      }
+
+      if (bestGroup === -1) {
+        bestGroup = seedNx.length;
+        seedNx.push(fnx); seedNy.push(fny); seedNz.push(fnz);
+        sumNx.push(fnx * angle); sumNy.push(fny * angle); sumNz.push(fnz * angle);
+      } else {
+        sumNx[bestGroup] += fnx * angle;
+        sumNy[bestGroup] += fny * angle;
+        sumNz[bestGroup] += fnz * angle;
+      }
+      localGroups[idx] = bestGroup;
+    }
+
+    const baseGroupId = totalGroups;
+    totalGroups += sumNx.length;
+    for (let g = 0; g < sumNx.length; g++) {
+      const len = Math.hypot(sumNx[g], sumNy[g], sumNz[g]);
+      if (len > 1e-12) { sumNx[g] /= len; sumNy[g] /= len; sumNz[g] /= len; }
+      else { sumNx[g] = seedNx[g]; sumNy[g] = seedNy[g]; sumNz[g] = seedNz[g]; }
+    }
+
+    for (let idx = 0; idx < vertCorners.length; idx++) {
+      const k = vertCorners[idx];
+      const g = localGroups[idx];
+      cornerGlobalGroup[k] = baseGroupId + g;
+      const k3 = k * 3;
+      cornerOutNormals[k3] = sumNx[g];
+      cornerOutNormals[k3 + 1] = sumNy[g];
+      cornerOutNormals[k3 + 2] = sumNz[g];
+    }
+  }
+  return { cornerGlobalGroup, cornerOutNormals, totalGroups };
+}
+
+function buildSplitIndexedBuffers(
+  posArray: ArrayLike<number>,
+  idxArray: ArrayLike<number>,
+  origVertCount: number,
+  cornerCount: number,
+  cornerGlobalGroup: Int32Array,
+  cornerOutNormals: Float32Array
+) {
+  const newIndices = new Uint32Array(cornerCount);
+  const firstGroupForVert = new Int32Array(origVertCount).fill(-1);
+  const splitMap = new Map<string, number>();
+  const extraOrigVert: number[] = [];
+  const extraGroupId: number[] = [];
+  const extraNormals: number[] = [];
+  const baseNormals = new Float32Array(origVertCount * 3);
+
+  for (let k = 0; k < cornerCount; k++) {
+    const origV = idxArray[k];
+    const gid = cornerGlobalGroup[k];
+    const k3 = k * 3;
+    const fg = firstGroupForVert[origV];
+
+    if (fg === -1 || fg === gid) {
+      if (fg === -1) {
+        firstGroupForVert[origV] = gid;
+        const v3 = origV * 3;
+        baseNormals[v3] = cornerOutNormals[k3];
+        baseNormals[v3 + 1] = cornerOutNormals[k3 + 1];
+        baseNormals[v3 + 2] = cornerOutNormals[k3 + 2];
+      }
+      newIndices[k] = origV;
+    } else {
+      const key = `${origV}_${gid}`;
+      let mapped = splitMap.get(key);
+      if (mapped === undefined) {
+        mapped = origVertCount + extraOrigVert.length;
+        splitMap.set(key, mapped);
+        extraOrigVert.push(origV);
+        extraGroupId.push(gid);
+        extraNormals.push(cornerOutNormals[k3], cornerOutNormals[k3 + 1], cornerOutNormals[k3 + 2]);
+      }
+      newIndices[k] = mapped;
+    }
+  }
+
+  const totalVerts = origVertCount + extraOrigVert.length;
+  const positions = new Float32Array(totalVerts * 3);
+  const normals = new Float32Array(totalVerts * 3);
+  const groupVertexOf = new Int32Array(totalVerts);
+
+  for (let v = 0; v < origVertCount; v++) {
+    const v3 = v * 3;
+    positions[v3] = posArray[v3]; positions[v3 + 1] = posArray[v3 + 1]; positions[v3 + 2] = posArray[v3 + 2];
+    normals[v3] = baseNormals[v3]; normals[v3 + 1] = baseNormals[v3 + 1]; normals[v3 + 2] = baseNormals[v3 + 2];
+    groupVertexOf[v] = firstGroupForVert[v] >= 0 ? firstGroupForVert[v] : 0;
+  }
+  for (let e = 0; e < extraOrigVert.length; e++) {
+    const dstV = origVertCount + e;
+    const dst = dstV * 3;
+    const src = extraOrigVert[e] * 3;
+    positions[dst] = posArray[src]; positions[dst + 1] = posArray[src + 1]; positions[dst + 2] = posArray[src + 2];
+    normals[dst] = extraNormals[e * 3]; normals[dst + 1] = extraNormals[e * 3 + 1]; normals[dst + 2] = extraNormals[e * 3 + 2];
+    groupVertexOf[dstV] = extraGroupId[e];
+  }
+
+  return { positions, normals, indices: newIndices, groupVertexOf, vertexCount: totalVerts };
 }
 
 /**
- * Calcula normais suaves com Crease Angle E o atributo de curvatura multi-escala `aCavity`
- * (`vec3(valleyTight, valleyWide, ridge)`) diretamente na geometria, SEM alterar `position` ou `index`.
- * Garante fidelidade 1:1 ao Cavity do Blender Workbench (Imagens 2, 3 e 4).
+ * Computes angle-weighted crease-separated vertex normals (true face-to-face dihedral threshold)
+ * and clean group-isolated `aCavity` curvature. For indexed meshes (.3MF), splits only vertices
+ * sitting on hard creases so flat caps and 90° edges render crisp without triangle streaks.
  */
 export function computeCreasedNormalsInPlace(
   geometry: THREE.BufferGeometry,
-  creaseAngleDeg: number = 68
+  creaseAngleDeg: number = DEFAULT_CREASE_ANGLE_DEG
 ): void {
   const posAttr = geometry.attributes.position;
   if (!posAttr || posAttr.count < 3) return;
@@ -26,225 +181,58 @@ export function computeCreasedNormalsInPlace(
   const triCount = idxAttr ? Math.floor(idxAttr.count / 3) : Math.floor(vertexCount / 3);
   if (triCount === 0) return;
 
-  if (triCount > 600000) {
+  if (triCount > MAX_SUPPORTED_TRIS) {
     if (!geometry.attributes.normal) geometry.computeVertexNormals();
     return;
   }
 
   const posArray = posAttr.array as ArrayLike<number>;
-  const faceNormals = new Float32Array(triCount * 3);
+  const { weldedOf, weldedCount, span } = weldVertexPositions(posArray, vertexCount);
+  const { faceNormals, cornerAngles } = computeFacesAndAngles(posArray, idxArray, triCount);
+  const { cornerGlobalGroup, cornerOutNormals, totalGroups } = buildCreasedSmoothingGroups(
+    weldedOf,
+    weldedCount,
+    idxArray,
+    triCount * 3,
+    faceNormals,
+    cornerAngles,
+    creaseAngleDeg
+  );
 
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let finalPositions: Float32Array;
+  let finalNormals: Float32Array;
+  let finalIndices: Uint32Array | null = null;
+  let finalGroupVertexOf: Int32Array;
+  let finalVertCount = vertexCount;
 
-  for (let v = 0; v < vertexCount; v++) {
-    const i = v * 3;
-    const x = posArray[i], y = posArray[i + 1], z = posArray[i + 2];
-    if (x < minX) minX = x; if (x > maxX) maxX = x;
-    if (y < minY) minY = y; if (y > maxY) maxY = y;
-    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  if (!idxArray) {
+    finalPositions = posArray instanceof Float32Array ? posArray : Float32Array.from(posArray);
+    finalNormals = cornerOutNormals;
+    finalGroupVertexOf = cornerGlobalGroup;
+    geometry.setAttribute('normal', new THREE.BufferAttribute(finalNormals, 3));
+  } else {
+    const split = buildSplitIndexedBuffers(
+      posArray, idxArray, vertexCount, triCount * 3, cornerGlobalGroup, cornerOutNormals
+    );
+    finalPositions = split.positions;
+    finalNormals = split.normals;
+    finalIndices = split.indices;
+    finalGroupVertexOf = split.groupVertexOf;
+    finalVertCount = split.vertexCount;
+    geometry.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(finalNormals, 3));
+    geometry.setIndex(new THREE.BufferAttribute(finalIndices, 1));
   }
 
-  // 1. Soldagem espacial rápida (mapeia cada vértice v -> weldedOf[v])
-  const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1e-3);
-  const invCell = 100000 / span;
-  const epsSq = (span * 1e-4) * (span * 1e-4);
-
-  const tableSize = nextPowerOfTwo(vertexCount * 2);
-  const tableMask = tableSize - 1;
-  const head = new Int32Array(tableSize).fill(-1);
-  const nextWelded = new Int32Array(vertexCount).fill(-1);
-  const weldedOf = new Int32Array(vertexCount);
-  const repVertex = new Int32Array(vertexCount);
-  let weldedCount = 0;
-
-  for (let v = 0; v < vertexCount; v++) {
-    const pIdx = v * 3;
-    const vx = posArray[pIdx], vy = posArray[pIdx + 1], vz = posArray[pIdx + 2];
-    const qx = Math.round((vx - minX) * invCell);
-    const qy = Math.round((vy - minY) * invCell);
-    const qz = Math.round((vz - minZ) * invCell);
-    const bucket = (((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) | 0) & tableMask;
-
-    let foundW = -1;
-    let currW = head[bucket];
-    while (currW !== -1) {
-      const rIdx = repVertex[currW] * 3;
-      const dx = posArray[rIdx] - vx;
-      const dy = posArray[rIdx + 1] - vy;
-      const dz = posArray[rIdx + 2] - vz;
-      if (dx * dx + dy * dy + dz * dz <= epsSq) {
-        foundW = currW;
-        break;
-      }
-      currW = nextWelded[currW];
-    }
-
-    if (foundW === -1) {
-      foundW = weldedCount++;
-      repVertex[foundW] = v;
-      nextWelded[foundW] = head[bucket];
-      head[bucket] = foundW;
-    }
-    weldedOf[v] = foundW;
-  }
-
-  // 2. Normais das faces e normal suave contínua por vértice soldado (para cálculo de curvatura)
-  const wNormals = new Float32Array(weldedCount * 3);
-  const triWelded = new Int32Array(triCount * 3);
-
-  for (let t = 0; t < triCount; t++) {
-    const t3 = t * 3;
-    const v0 = idxArray ? idxArray[t3] : t3;
-    const v1 = idxArray ? idxArray[t3 + 1] : t3 + 1;
-    const v2 = idxArray ? idxArray[t3 + 2] : t3 + 2;
-
-    const i0 = v0 * 3, i1 = v1 * 3, i2 = v2 * 3;
-    const ax = posArray[i0], ay = posArray[i0 + 1], az = posArray[i0 + 2];
-    const abx = posArray[i1] - ax, aby = posArray[i1 + 1] - ay, abz = posArray[i1 + 2] - az;
-    const acx = posArray[i2] - ax, acy = posArray[i2 + 1] - ay, acz = posArray[i2 + 2] - az;
-
-    let nx = aby * acz - abz * acy;
-    let ny = abz * acx - abx * acz;
-    let nz = abx * acy - aby * acx;
-    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    if (len > 1e-12) {
-      const invLen = 1 / len;
-      nx *= invLen; ny *= invLen; nz *= invLen;
-    }
-    faceNormals[t3] = nx;
-    faceNormals[t3 + 1] = ny;
-    faceNormals[t3 + 2] = nz;
-
-    const w0 = weldedOf[v0], w1 = weldedOf[v1], w2 = weldedOf[v2];
-    triWelded[t3] = w0; triWelded[t3 + 1] = w1; triWelded[t3 + 2] = w2;
-
-    wNormals[w0 * 3] += nx; wNormals[w0 * 3 + 1] += ny; wNormals[w0 * 3 + 2] += nz;
-    wNormals[w1 * 3] += nx; wNormals[w1 * 3 + 1] += ny; wNormals[w1 * 3 + 2] += nz;
-    wNormals[w2 * 3] += nx; wNormals[w2 * 3 + 1] += ny; wNormals[w2 * 3 + 2] += nz;
-  }
-
-  for (let w = 0; w < weldedCount; w++) {
-    const w3 = w * 3;
-    const x = wNormals[w3], y = wNormals[w3 + 1], z = wNormals[w3 + 2];
-    const len = Math.sqrt(x * x + y * y + z * z);
-    if (len > 1e-12) {
-      const invLen = 1 / len;
-      wNormals[w3] = x * invLen; wNormals[w3 + 1] = y * invLen; wNormals[w3 + 2] = z * invLen;
-    }
-  }
-
-  // 3. Curvatura discreta adimensional por aresta: c = dot(N_b - N_a, normalize(P_b - P_a))
-  const valleySum = new Float32Array(weldedCount);
-  const ridgeSum = new Float32Array(weldedCount);
-  const edgeCnt = new Uint16Array(weldedCount);
-
-  const accumEdge = (wa: number, wb: number) => {
-    if (wa === wb) return;
-    const pa = repVertex[wa] * 3, pb = repVertex[wb] * 3;
-    const dx = posArray[pb] - posArray[pa];
-    const dy = posArray[pb + 1] - posArray[pa + 1];
-    const dz = posArray[pb + 2] - posArray[pa + 2];
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (dist < 1e-9) return;
-
-    const na = wa * 3, nb = wb * 3;
-    const dnx = wNormals[nb] - wNormals[na];
-    const dny = wNormals[nb + 1] - wNormals[na + 1];
-    const dnz = wNormals[nb + 2] - wNormals[na + 2];
-
-    const curv = (dnx * dx + dny * dy + dnz * dz) / dist;
-    if (curv < -0.015) {
-      const val = -curv;
-      valleySum[wa] += val;
-      valleySum[wb] += val;
-    } else if (curv > 0.02) {
-      ridgeSum[wa] += curv;
-      ridgeSum[wb] += curv;
-    }
-    edgeCnt[wa]++;
-    edgeCnt[wb]++;
-  };
-
-  for (let t = 0; t < triCount; t++) {
-    const t3 = t * 3;
-    const w0 = triWelded[t3], w1 = triWelded[t3 + 1], w2 = triWelded[t3 + 2];
-    accumEdge(w0, w1);
-    accumEdge(w1, w2);
-    accumEdge(w2, w0);
-  }
-
-  const valleyTight = new Float32Array(weldedCount);
-  let valleyWide = new Float32Array(weldedCount);
-  const ridgeArr = new Float32Array(weldedCount);
-
-  for (let w = 0; w < weldedCount; w++) {
-    const cnt = Math.max(edgeCnt[w], 1);
-    const vRaw = Math.min(1.0, (valleySum[w] / cnt) * 2.6);
-    const rRaw = Math.min(1.0, (ridgeSum[w] / cnt) * 2.2);
-    valleyTight[w] = vRaw;
-    valleyWide[w] = vRaw;
-    ridgeArr[w] = rRaw;
-  }
-
-  // 4. Difusão topológica multi-anel adaptativa para o Cavity Distance (espalhamento em cavidades largas)
-  const diffusionPasses = triCount > 300000 ? 6 : triCount > 150000 ? 8 : 10;
-  let nextWide = new Float32Array(weldedCount);
-  const ringCnt = new Uint16Array(weldedCount);
-
-  for (let pass = 0; pass < diffusionPasses; pass++) {
-    nextWide.fill(0);
-    ringCnt.fill(0);
-    for (let t = 0; t < triCount; t++) {
-      const t3 = t * 3;
-      const w0 = triWelded[t3], w1 = triWelded[t3 + 1], w2 = triWelded[t3 + 2];
-      const avg = (valleyWide[w0] + valleyWide[w1] + valleyWide[w2]) / 3;
-      nextWide[w0] += avg; ringCnt[w0]++;
-      nextWide[w1] += avg; ringCnt[w1]++;
-      nextWide[w2] += avg; ringCnt[w2]++;
-    }
-    for (let w = 0; w < weldedCount; w++) {
-      const diffused = ringCnt[w] > 0 ? nextWide[w] / ringCnt[w] : valleyWide[w];
-      valleyWide[w] = Math.min(1.0, Math.max(valleyTight[w], diffused * 1.12));
-    }
-    if (pass === 0) {
-      for (let w = 0; w < weldedCount; w++) {
-        valleyTight[w] = Math.min(1.0, valleyTight[w] * 0.7 + valleyWide[w] * 0.3);
-      }
-    }
-  }
-
-  // 5. Grava atributo `aCavity` (valleyTight, valleyWide, ridge) e normais com Crease Angle
-  const outCavity = new Float32Array(vertexCount * 3);
-  for (let v = 0; v < vertexCount; v++) {
-    const w = weldedOf[v];
-    const v3 = v * 3;
-    outCavity[v3] = valleyTight[w];
-    outCavity[v3 + 1] = valleyWide[w];
-    outCavity[v3 + 2] = ridgeArr[w];
-  }
-  geometry.setAttribute('aCavity', new THREE.BufferAttribute(outCavity, 3));
-
-  if (idxAttr) {
-    geometry.computeVertexNormals();
-    return;
-  }
-
-  const cosThreshold = Math.cos((creaseAngleDeg * Math.PI) / 180);
-  const outNormals = new Float32Array(vertexCount * 3);
-  for (let v = 0; v < vertexCount; v++) {
-    const w = weldedOf[v];
-    const tSelf = Math.floor(v / 3) * 3;
-    const fnx = faceNormals[tSelf], fny = faceNormals[tSelf + 1], fnz = faceNormals[tSelf + 2];
-    const wn3 = w * 3;
-    const wnx = wNormals[wn3], wny = wNormals[wn3 + 1], wnz = wNormals[wn3 + 2];
-    const dot = fnx * wnx + fny * wny + fnz * wnz;
-    const v3 = v * 3;
-    if (dot >= cosThreshold) {
-      outNormals[v3] = wnx; outNormals[v3 + 1] = wny; outNormals[v3 + 2] = wnz;
-    } else {
-      outNormals[v3] = fnx; outNormals[v3 + 1] = fny; outNormals[v3 + 2] = fnz;
-    }
-  }
-  geometry.setAttribute('normal', new THREE.BufferAttribute(outNormals, 3));
+  const cavityAttr = computeGroupCavityAttribute({
+    triCount,
+    vertexCount: finalVertCount,
+    positions: finalPositions,
+    normals: finalNormals,
+    indices: finalIndices,
+    groupVertexOf: finalGroupVertexOf,
+    groupVertexCount: Math.max(totalGroups, 1),
+    span,
+  });
+  geometry.setAttribute('aCavity', new THREE.BufferAttribute(cavityAttr, 3));
 }

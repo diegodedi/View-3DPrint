@@ -17,6 +17,13 @@ function ensureThumbEngine(): void {
   });
   thumbRenderer.setSize(320, 220);
   thumbRenderer.setPixelRatio(1);
+  thumbRenderer.domElement.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    thumbRenderer = null;
+    thumbScene = null;
+    thumbCamera = null;
+    thumbHolder = null;
+  });
 
   thumbScene = new THREE.Scene();
   thumbScene.background = new THREE.Color(0x161616);
@@ -96,8 +103,15 @@ async function renderObjectWithEncoder<T>(
     }
     try {
       const dims = prepareObjectOnPlate(object3d);
+      const rawMax = Math.max(dims.widthMm, dims.depthMm, dims.heightMm);
+      if (dims.triangles <= 0 || !Number.isFinite(rawMax) || rawMax <= 0) {
+        return fallback;
+      }
       thumbHolder.add(object3d);
-      const maxDim = Math.max(dims.widthMm, dims.depthMm, dims.heightMm, 20);
+      const maxDim = Math.max(rawMax, 0.05);
+      thumbCamera.near = Math.max(0.005, maxDim * 0.001);
+      thumbCamera.far = Math.max(4000, maxDim * 25);
+      thumbCamera.updateProjectionMatrix();
       thumbCamera.position.set(maxDim * 1.4, maxDim * 1.1, maxDim * 1.4);
       thumbCamera.lookAt(0, dims.heightMm * 0.42, 0);
       thumbRenderer.render(thumbScene, thumbCamera);

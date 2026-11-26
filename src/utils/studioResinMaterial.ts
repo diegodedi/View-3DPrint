@@ -87,8 +87,9 @@ const RESIN_FRAGMENT_SHADER = /* glsl */ `
     vec3 N = normalize(vViewNormal);
     if (!gl_FrontFacing) N = -N;
     vec3 V = normalize(-vViewPosition);
+    float facing = max(dot(N, V), 0.0);
 
-    // 1. Curvatura Screen-Space fina combinada com Curvatura Topológica Multi-Anel (vCavity)
+    // 1. Curvatura Screen-Space protegida contra arestas vivas e triângulos estreitos + vCavity por grupo suave
     vec3 dPdx = dFdx(vViewPosition);
     vec3 dPdy = dFdy(vViewPosition);
     vec3 dNdx = dFdx(N);
@@ -97,22 +98,23 @@ const RESIN_FRAGMENT_SHADER = /* glsl */ `
     float lenX = max(length(dPdx), 1e-4);
     float lenY = max(length(dPdy), 1e-4);
 
-    float guardX = 1.0 - smoothstep(0.18, 0.68, abs(dPdx.z) / lenX);
-    float guardY = 1.0 - smoothstep(0.18, 0.68, abs(dPdy.z) / lenY);
+    float guardX = (1.0 - smoothstep(0.18, 0.62, abs(dPdx.z) / lenX)) * (1.0 - smoothstep(0.18, 0.50, length(dNdx)));
+    float guardY = (1.0 - smoothstep(0.18, 0.62, abs(dPdy.z) / lenY)) * (1.0 - smoothstep(0.18, 0.50, length(dNdy)));
+    float grazingGuard = smoothstep(0.12, 0.45, facing);
 
-    float curv = (dot(dNdx, dPdx) / lenX) * guardX + (dot(dNdy, dPdy) / lenY) * guardY;
-    float ssValley = smoothstep(0.002, 0.042, -curv);
-    float ssRidge  = smoothstep(0.004, 0.052,  curv);
+    float curv = ((dot(dNdx, dPdx) / lenX) * guardX + (dot(dNdy, dPdy) / lenY) * guardY) * grazingGuard;
+    float ssValley = smoothstep(0.018, 0.14, -curv);
+    float ssRidge  = smoothstep(0.025, 0.16,  curv);
 
-    // vCavity.x = vinco estreito (Imagem 3), vCavity.y = cavidade larga multi-anel (Imagem 4)
-    float tightVal = max(vCavity.x, ssValley * 0.85);
+    // vCavity.x = vinco estreito, vCavity.y = cavidade larga localizada (isolada por grupo suave)
+    float tightVal = max(vCavity.x, ssValley * 0.45);
     float wideVal  = max(vCavity.y, tightVal);
 
-    float narrowCavity = pow(clamp(tightVal, 0.0, 1.0), 1.45);
-    float broadCavity  = pow(clamp(wideVal, 0.0, 1.0), mix(1.05, 0.42, uCavityDistance));
+    float narrowCavity = pow(clamp(tightVal, 0.0, 1.0), 1.60);
+    float broadCavity  = pow(clamp(wideVal, 0.0, 1.0), mix(1.35, 0.78, uCavityDistance));
     float valleyField  = mix(narrowCavity, broadCavity, smoothstep(0.05, 1.0, uCavityDistance));
 
-    // 2. Iluminação Difusa Studio MatCap com Roughness (Imagens 2, 3 e 4)
+    // 2. Iluminação Difusa Studio MatCap com Roughness
     vec3 L1 = normalize(vec3(-0.30, 0.56, 0.77));
     vec3 L2 = normalize(vec3( 0.44, 0.22, 0.87));
     vec3 L3 = normalize(vec3( 0.00, -0.82, 0.57));
@@ -122,31 +124,30 @@ const RESIN_FRAGMENT_SHADER = /* glsl */ `
     float diff2 = clamp((dot(N, L2) + wrap) / (1.0 + wrap), 0.0, 1.0);
     float bounce = clamp((dot(N, L3) + 0.40) / 1.40, 0.0, 1.0);
 
-    float facing = max(dot(N, V), 0.0);
     float clayFlatness = mix(0.92, 1.02, facing) * 0.22 * uRoughness;
     float totalDiffuse = 0.42 + diff1 * 0.42 + diff2 * 0.14 + bounce * 0.08 + clayFlatness;
     totalDiffuse = clamp(totalDiffuse, 0.60, 1.06);
 
-    // 3. Cavity Intensity: 0.0 = sem cavity (Imagem 2); 1.0 = preto total vec3(0.0) (Imagem 4)
-    float intensityBoost = mix(1.0, 2.35, uCavityIntensity * uCavityIntensity);
-    float valleyMix = clamp(valleyField * uCavityIntensity * intensityBoost, 0.0, 1.0);
-    vec3 darkTarget = mix(uCavityColor * totalDiffuse, vec3(0.0), smoothstep(0.20, 0.92, uCavityIntensity));
+    // 3. Cavity Intensity calibrado (evita saturar ruído de triangulação em preto absoluto)
+    float intensityBoost = mix(0.85, 1.45, uCavityIntensity);
+    float valleyMix = clamp(valleyField * uCavityIntensity * intensityBoost, 0.0, 0.88);
+    vec3 darkTarget = mix(uCavityColor * totalDiffuse, uCavityColor * 0.25, smoothstep(0.55, 1.0, uCavityIntensity));
 
     // 4. Baixa Specular (lóbulo acetinado largo, suprimido nos vincos)
     vec3 H1 = normalize(L1 + V);
     float NdotH = max(dot(N, H1), 0.0);
     float shininess = mix(40.0, 9.0, uRoughness);
-    float spec = pow(NdotH, shininess) * uSpecularIntensity * (1.0 - valleyMix * 0.95);
+    float spec = pow(NdotH, shininess) * uSpecularIntensity * (1.0 - valleyMix * 0.90);
     vec3 specContrib = mix(uRidgeColor, vec3(1.0), 0.35) * spec;
 
-    // 5. Composição Tonal Blender Workbench (Valley + Ridge highlight)
+    // 5. Composição Tonal Blender Workbench (Valley + Ridge highlight sutil)
     vec3 baseLit = uBaseColor * totalDiffuse;
     vec3 withValley = mix(baseLit, darkTarget, valleyMix);
 
-    float ridgeField = max(vCavity.z, ssRidge * 0.75);
-    float ridgeSpread = pow(clamp(ridgeField, 0.0, 1.0), mix(1.35, 0.60, uCavityDistance));
-    float ridgeMix = clamp(ridgeSpread * min(uCavityIntensity * 1.15, 0.75), 0.0, 0.68);
-    vec3 ridgeHighlight = mix(uRidgeColor, vec3(1.0), 0.25);
+    float ridgeField = max(vCavity.z, ssRidge * 0.35);
+    float ridgeSpread = pow(clamp(ridgeField, 0.0, 1.0), mix(1.50, 0.95, uCavityDistance));
+    float ridgeMix = clamp(ridgeSpread * uCavityIntensity * 0.45, 0.0, 0.32);
+    vec3 ridgeHighlight = mix(uRidgeColor, vec3(1.0), 0.20);
     vec3 withRidge = mix(withValley, ridgeHighlight, ridgeMix * (1.0 - valleyMix * 0.85));
 
     vec3 finalColor = withRidge + specContrib + (uBaseColor * uSelectBoost);
